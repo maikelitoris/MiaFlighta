@@ -144,3 +144,43 @@ def test_history_rows_have_provider_and_currency(session):
     save_offers(session, [make_offer(price=50, provider="travelpayouts")], search_run_id=None)
     h = session.scalars(select(PriceHistory)).one()
     assert h.provider == "travelpayouts" and h.currency == "EUR" and h.observed_price == 50
+
+
+def test_return_date_window_filters_offers():
+    today = date.today()
+    out = future(10, 9)
+    cfg = _cfg(min_stay_days=None, max_stay_days=None,
+               return_date_from=today + timedelta(days=15), return_date_to=today + timedelta(days=18))
+    assert offer_matches(cfg, make_offer(departure_at=out, return_departure_at=future(16, 12)), today)
+    assert not offer_matches(cfg, make_offer(departure_at=out, return_departure_at=future(13, 12)), today)
+    assert not offer_matches(cfg, make_offer(departure_at=out, return_departure_at=future(20, 12)), today)
+
+
+def test_return_window_is_passed_to_providers_and_caps_stay():
+    today = date(2026, 11, 12)
+    cfg = _cfg(date_from=date(2026, 12, 1), date_to=date(2026, 12, 10), min_stay_days=3, max_stay_days=30,
+               return_date_from=date(2026, 12, 5), return_date_to=date(2026, 12, 14))
+    qs = plan_queries(cfg, today, currency="EUR", month_search=True)
+    assert qs and all(q.return_date_to == date(2026, 12, 14) for q in qs)
+    assert all(q.max_stay_days == 13 for q in qs)  # 1 Dec -> 14 Dec at most
+
+
+def test_return_window_before_outbound_plans_nothing():
+    today = date(2026, 11, 12)
+    cfg = _cfg(date_from=date(2026, 12, 10), date_to=date(2026, 12, 20), return_date_to=date(2026, 12, 1))
+    assert plan_queries(cfg, today, currency="EUR", month_search=True) == []
+
+
+def test_old_database_gets_new_columns(tmp_path, config):
+    import sqlite3
+
+    from app.database.db import make_session_factory
+
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE search_configurations (id INTEGER PRIMARY KEY, origin TEXT, destination TEXT)")
+    con.commit()
+    con.close()
+    make_session_factory(config, f"sqlite:///{db}")
+    cols = {r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(search_configurations)")}
+    assert {"return_date_from", "return_date_to"} <= cols

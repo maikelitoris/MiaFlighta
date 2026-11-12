@@ -99,6 +99,11 @@ class SchedulerConfig(BaseModel):
     blocked_pause_hours: float = 24
 
 
+class DigestConfig(BaseModel):
+    every_hours: float = Field(12, ge=0)  # 0 = no periodic summary
+    max_routes: int = Field(8, ge=1, le=30)
+
+
 class DashboardConfig(BaseModel):
     current_offer_hours: float = 24
 
@@ -120,6 +125,7 @@ class AppConfig(BaseModel):
     alerts: AlertsConfig = AlertsConfig()
     scheduler: SchedulerConfig = SchedulerConfig()
     dashboard: DashboardConfig = DashboardConfig()
+    digest: DigestConfig = DigestConfig()
     database_path: str = "data/flight_radar.db"
     secrets: Secrets = Secrets()
 

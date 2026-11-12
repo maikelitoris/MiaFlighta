@@ -7,7 +7,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import create_engine, delete, event, select
+from sqlalchemy import create_engine, delete, event, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -31,9 +31,27 @@ def make_engine(url: str) -> Engine:
     return engine
 
 
+# Columns added after the first release: (table, column, SQL type). create_all()
+# never alters existing tables, so older databases get them added here.
+_ADDED_COLUMNS = [
+    ("search_configurations", "return_date_from", "DATE"),
+    ("search_configurations", "return_date_to", "DATE"),
+]
+
+
+def _migrate(engine: Engine) -> None:
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, column, sql_type in _ADDED_COLUMNS:
+            if table in insp.get_table_names() and column not in {c["name"] for c in insp.get_columns(table)}:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+                log.info("Database upgraded: added %s.%s", table, column)
+
+
 def make_session_factory(config: AppConfig, url: str | None = None) -> sessionmaker[Session]:
     engine = make_engine(url or config.database_url)
     Base.metadata.create_all(engine)
+    _migrate(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 

@@ -27,10 +27,20 @@ def plan_queries(
     trip = TripType(cfg.trip_type)
     hints = {}
     if trip == TripType.RETURN:
+        min_stay, max_stay = cfg.min_stay_days, cfg.max_stay_days
+        if cfg.return_date_to is not None:
+            # Returns can't be later than the window allows; tightening the stay
+            # hint keeps providers from fetching months that can never match.
+            cap = (cfg.return_date_to - start).days
+            max_stay = cap if max_stay is None else min(max_stay, cap)
+        if max_stay is not None and max_stay < 0:
+            return []
         hints = dict(
-            min_stay_days=cfg.min_stay_days,
-            max_stay_days=cfg.max_stay_days,
+            min_stay_days=min_stay,
+            max_stay_days=max_stay,
             return_weekdays=sorted(SearchConfiguration.parse_weekdays(cfg.return_weekdays)),
+            return_date_from=cfg.return_date_from,
+            return_date_to=cfg.return_date_to,
         )
     if month_search:
         return [
@@ -74,6 +84,10 @@ def offer_matches(cfg: SearchConfiguration, offer: FlightOfferData, today: date)
         if cfg.min_stay_days is not None and stay < cfg.min_stay_days:
             return False
         if cfg.max_stay_days is not None and stay > cfg.max_stay_days:
+            return False
+        if cfg.return_date_from is not None and ret < cfg.return_date_from:
+            return False
+        if cfg.return_date_to is not None and ret > cfg.return_date_to:
             return False
         ret_days = SearchConfiguration.parse_weekdays(cfg.return_weekdays)
         if ret_days and ret.weekday() not in ret_days:

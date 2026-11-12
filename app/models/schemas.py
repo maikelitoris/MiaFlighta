@@ -40,6 +40,8 @@ class SearchQuery(BaseModel):
     min_stay_days: int | None = None
     max_stay_days: int | None = None
     return_weekdays: list[int] = []
+    return_date_from: date | None = None
+    return_date_to: date | None = None
 
     @field_validator("origin", "destination")
     @classmethod

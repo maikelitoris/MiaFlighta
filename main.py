@@ -7,6 +7,7 @@
     python main.py status            print status
     python main.py check             check provider credentials / connectivity
     python main.py telegram-test     send a test Telegram message
+    python main.py digest            send the 12-hour price summary to Telegram now
 """
 
 from __future__ import annotations
@@ -92,18 +93,39 @@ def cmd_telegram_test(args) -> int:
     return 0 if result.status == "sent" else 1
 
 
+def cmd_digest(args) -> int:
+    from app.context import build_context
+    from app.services import digest
+
+    ctx = build_context()
+    with ctx.session_factory() as s:
+        if args.print:
+            print(_plain(digest.build_digest(s, ctx.config)))
+            return 0
+        status = digest.maybe_send_digest(s, ctx.config, ctx.notifier, force=True)
+    print(f"Telegram digest: {status}")
+    return 0 if status == "sent" else 1
+
+
 def cmd_run(args) -> int:
     from app.context import build_context
     from app.scheduler.scheduler import build_scheduler
 
+    from app.services import digest
+
     ctx = build_context()
     tick = ctx.config.scheduler.tick_minutes
+
+    def send_digest():
+        with ctx.session_factory() as s:
+            return digest.maybe_send_digest(s, ctx.config, ctx.notifier)
+
     print("Flight Radar is running. Keep this window open and the computer awake; "
           "searches only happen while this process runs. Ctrl+C to stop.")
     if ctx.notifier.configured and not args.no_bot:
         from app.notifications.bot import build_bot
 
-        scheduler = build_scheduler(ctx.search_service, tick)
+        scheduler = build_scheduler(ctx.search_service, tick, after_tick=send_digest)
         scheduler.start()
         log.info("Scheduler started (checks every %s min); starting Telegram bot", tick)
         try:
@@ -113,7 +135,7 @@ def cmd_run(args) -> int:
     else:
         if not ctx.notifier.configured:
             log.warning("Telegram is not configured: running scheduler only (no notifications/commands).")
-        scheduler = build_scheduler(ctx.search_service, tick, blocking=True)
+        scheduler = build_scheduler(ctx.search_service, tick, blocking=True, after_tick=send_digest)
         try:
             scheduler.start()
         except (KeyboardInterrupt, SystemExit):
@@ -141,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="print status and best offers").set_defaults(func=cmd_status)
     sub.add_parser("check", help="check provider credentials").set_defaults(func=cmd_check)
     sub.add_parser("telegram-test", help="send a test Telegram message").set_defaults(func=cmd_telegram_test)
+    p = sub.add_parser("digest", help="send the periodic Telegram summary now")
+    p.add_argument("--print", action="store_true", help="only print it, don't send")
+    p.set_defaults(func=cmd_digest)
     p = sub.add_parser("run", help="run scheduler + Telegram bot")
     p.add_argument("--no-bot", action="store_true", help="scheduler only, no Telegram commands")
     p.set_defaults(func=cmd_run)

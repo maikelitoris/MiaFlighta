@@ -26,6 +26,7 @@ HELP = (
     "/routes – monitored routes\n"
     "/budget – show budget · /budget 120 – set global · /budget 3 90 – set route #3\n"
     "/search – run a search now\n"
+    "/summary – the 12-hour price summary, now\n"
     "/help – this message\n\n"
     "<i>Prices come from cached provider data and are indicative. Always verify on the booking site.</i>"
 )
@@ -62,7 +63,7 @@ def build_bot(ctx: AppContext) -> Application:
             await reply(update, f"Hi! Your chat id is <code>{chat_id}</code>.\n"
                                 "Put it in TELEGRAM_CHAT_ID in your .env file and restart Flight Radar.")
             return
-        await reply(update, "✈️ Flight Radar is running. You'll get a message when a good deal appears.\n\n" + HELP)
+        await reply(update, "✈️ Flight Radar is running. You'll get a price summary every 12 hours and an instant message when a good deal appears.\n\n" + HELP)
 
     @authorized
     async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,6 +91,13 @@ def build_bot(ctx: AppContext) -> Application:
         summary = await asyncio.to_thread(ctx.search_service.run, trigger="manual", force=True)
         await reply(update, "Done: " + summary.text())
 
+    @authorized
+    async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from app.services.digest import build_digest
+
+        await reply(update, await asyncio.to_thread(with_session, build_digest))
+
+    app.add_handler(CommandHandler("summary", summary_cmd))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("status", status))
