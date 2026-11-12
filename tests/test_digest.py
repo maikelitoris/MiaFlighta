@@ -50,7 +50,7 @@ def test_digest_lists_every_trip_even_without_a_deal(config, session):
     assert msg.index("€123.28") < msg.index("€126.98")  # cheapest first
     assert "🔻 €6.72 vs last check" in msg
     assert "Lowest seen so far: €123.28" in msg
-    assert "out 09:40 · back 17:55" in msg
+    assert f"out {OUT:%a %d %b} 09:40 · back {BACK:%a %d %b} 17:55" in msg  # no calendar data: totals only
 
 
 def test_digest_says_when_nothing_was_found(config, session):

@@ -12,7 +12,8 @@ from app.models.db_models import Airport, FlightOffer
 from app.services.deal_engine import assess_offer
 
 ctx = page_setup("Flight Search")
-st.caption("Filters the offers already collected. " + DISCLAIMER)
+st.caption("Return trips only: each result is a going flight and a coming-back flight priced together. "
+           "Filters the offers already collected. " + DISCLAIMER)
 
 with ctx.session_factory() as s:
     airports = {a.iata: a for a in s.scalars(select(Airport))}
@@ -21,16 +22,15 @@ with ctx.session_factory() as s:
     airlines = sorted({a for (a,) in s.execute(select(FlightOffer.airline).distinct()) if a})
 
 fmt = lambda c: f"{airports[c].city} ({c})" if c in airports else c  # noqa: E731
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 sel_origins = col1.multiselect("Departure airport", origins, default=origins, format_func=fmt)
 sel_dests = col2.multiselect("Destination airport", dests, default=dests, format_func=fmt)
-trip = col3.radio("Trip type", ["return", "one_way", "both"], horizontal=True,
-                  format_func=lambda t: {"one_way": "one-way"}.get(t, t))
+trip = "return"  # always going + coming back, priced together
 d1, d2, d3 = st.columns(3)
 dates = d1.date_input("Going between", (date.today(), date.today() + timedelta(days=90)), format="DD/MM/YYYY")
 ret_dates = d2.date_input("Coming back between", (date.today(), date.today() + timedelta(days=120)),
-                          format="DD/MM/YYYY", help="Return trips only", disabled=trip == "one_way")
-nights = d3.slider("Nights away", 0, 30, (0, 30), help="Return trips only", disabled=trip == "one_way")
+                          format="DD/MM/YYYY")
+nights = d3.slider("Nights away", 0, 30, (0, 30))
 col4, col5 = st.columns(2)
 max_price = col4.number_input(f"Max price ({ctx.config.currency}, total)", min_value=0.0, value=0.0, step=10.0,
                               help="0 = no limit")

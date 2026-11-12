@@ -136,8 +136,9 @@ def test_estimate_counts_shared_months_once(config, session):
     configs = list(session.scalars(select(SearchConfiguration)))
     providers = {"ryanair": RyanairProvider()}
     (u,) = ts.estimate_usage(configs, config, providers, today=TODAY)
-    assert u.requests_per_run == 1 + 4 + 4  # warm-up + 4 outbound Jan + 4 inbound Feb
-    assert u.runs_per_day == 2 and u.requests_per_day == 18  # every 12 h
+    # warm-up + 4 outbound Jan + 4 pairs x inbound Jan and Feb (for date comparisons)
+    assert u.requests_per_run == 1 + 4 + 8
+    assert u.runs_per_day == 2 and u.requests_per_day == 26  # every 12 h
     assert not u.over_cap
 
 
@@ -163,4 +164,4 @@ def test_trip_search_end_to_end_with_mocked_ryanair(config, session_factory, ses
     offers = ts.cheapest_offers(session, trip)
     # only Fri 29 Jan -> Mon 1 Feb, never the cheaper TEST fares on other days
     assert [(o.origin, round(o.price, 2)) for o in offers] == [("OPO", 123.28), ("LIS", 126.98)]
-    assert summary.requests_made == 5  # warm-up + 2 outbound + 2 inbound months
+    assert summary.requests_made == 5  # warm-up + 2 outbound + 2 inbound months (sparse TEST calendars)

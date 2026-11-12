@@ -24,6 +24,8 @@ from app.core.timeutils import utcnow
 from app.models.db_models import Airport, FlightOffer, PriceHistory, ProviderState, SearchRun
 from app.notifications.telegram import TELEGRAM_MAX_LEN, Notifier, SendResult, money
 from app.services import settings_service
+from app.services.fare_compare import compare_offer
+from app.services.fare_compare import history_text as fare_history_text
 from app.services.trips import Trip, cheapest_offers, list_trips
 
 log = logging.getLogger(__name__)
@@ -114,6 +116,40 @@ def _upcoming(session: Session, today: date) -> list[Trip]:
     return [t for t in list_trips(session) if t.enabled and not t.is_past(today)]
 
 
+def _leg_line(label: str, leg, airports) -> str:
+    times = f"{leg.departure_at:%H:%M}" if leg.departure_at else "?"
+    if leg.arrival_at:
+        times += f"→{leg.arrival_at:%H:%M}"
+    return (f"   {label} {_day(leg.day)} {times} {_e(_city(airports, leg.origin))}→"
+            f"{_e(_city(airports, leg.destination))} · {money(leg.price, leg.currency)}")
+
+
+def leg_lines(session: Session, o: FlightOffer, airports: dict[str, Airport]) -> list[str]:
+    """Going + coming-back flights of a return offer, plus how it compares."""
+    cmp = compare_offer(session, o)
+    lines = []
+    if cmp and cmp.going and cmp.coming_back:
+        lines.append(_leg_line("🛫 Going", cmp.going, airports))
+        lines.append(_leg_line("🛬 Back ", cmp.coming_back, airports))
+    else:
+        times = f"   out {o.departure_at:%a %d %b %H:%M}"
+        if o.return_departure_at:
+            times += f" · back {o.return_departure_at:%a %d %b %H:%M}"
+        lines.append(times)
+    if o.booking_url:
+        lines.append(f'   <a href="{_e(o.booking_url)}">Open booking page (both flights)</a>')
+    if cmp:
+        if cmp.rank_text:
+            lines.append(f"📊 <b>{_e(cmp.verdict.capitalize())}</b>: {_e(cmp.rank_text)}")
+            if cmp.cheapest:
+                c = cmp.cheapest[0]
+                lines.append(f"   Cheaper dates: {_day(c.outbound)} → {_day(c.back)} {money(c.price, o.currency)}")
+        else:
+            lines.append("📊 Not enough other dates in the fare calendar to compare yet")
+        lines.append(f"<i>{_e(fare_history_text(cmp))}</i>")
+    return lines
+
+
 # ---------------------------------------------------------------------- 12-hour digest
 def digest_blocks(session: Session, config: AppConfig, *, now: datetime | None = None) -> list[str]:
     """Message parts: a header, one block per watched trip, a footer."""
@@ -137,12 +173,7 @@ def digest_blocks(session: Session, config: AppConfig, *, now: datetime | None =
             line = (f"{medal}<b>{money(o.price, o.currency)}</b> {_e(_route(airports, o))} "
                     f"({_e(airline_name(o.airline))}) · {_change(o.price, _previous_price(o), o.currency)}")
             if i == 0:
-                times = f"out {o.departure_at:%H:%M}"
-                if o.return_departure_at:
-                    times += f" · back {o.return_departure_at:%H:%M}"
-                line += f"\n   {times}"
-                if o.booking_url:
-                    line += f' · <a href="{_e(o.booking_url)}">open</a>'
+                line += "\n" + "\n".join(leg_lines(session, o, airports))
             lines.append(line)
         missing = [f"{_city(airports, a)}→{_city(airports, b)}" for a in t.origins for b in t.destinations
                    if not any(o.origin == a and o.destination == b for o in current)]
@@ -219,9 +250,7 @@ def weekly_blocks(session: Session, config: AppConfig, *, now: datetime | None =
             verdict = f"{money(o.price - best.low.observed_price, o.currency)} above this week's low"
         pick = (f"🏆 <b>Best pick right now</b>\n{_trip_title(best.trip)}\n"
                 f"<b>{money(o.price, o.currency)}</b> {_e(_route(airports, o))} ({_e(airline_name(o.airline))}): "
-                f"{verdict}.")
-        if o.booking_url:
-            pick += f'\n<a href="{_e(o.booking_url)}">Open booking page</a>'
+                f"{verdict}.\n" + "\n".join(leg_lines(session, o, airports)))
         blocks.insert(1, pick)
     elif trips:
         blocks.insert(1, "🏆 No current fare for any watched trip, so there is no pick this week.")

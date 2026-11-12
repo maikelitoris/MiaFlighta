@@ -36,7 +36,7 @@ class RoutesConfig(BaseModel):
     seed_rolling_routes: bool = True
     origins: list[str] = ["OPO", "LIS", "FAO"]
     destinations: list[str] = ["KRK", "KTW"]
-    trip_types: list[Literal["one_way", "return"]] = ["return", "one_way"]
+    trip_types: list[Literal["one_way", "return"]] = ["return"]
     days_ahead_min: int = Field(1, ge=0)
     days_ahead_max: int = Field(60, ge=1, le=365)
     min_stay_days: int | None = 3

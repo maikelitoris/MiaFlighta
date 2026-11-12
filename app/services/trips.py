@@ -252,8 +252,10 @@ class ProviderUsage:
 
 
 def _ryanair_requests(configs: list[SearchConfiguration], today: date) -> int:
-    """Ryanair fetches one month of daily fares per direction and remembers it for the
-    rest of the run, so cost = unique (from, to, month) combinations + 1 warm-up."""
+    """Mirrors RyanairProvider: per outbound month it fetches that month's calendar
+    and the return calendars for every day of the month + stay (so trips can be
+    compared with other dates). Each (from, to, month) is fetched once per run, plus
+    one warm-up request. An upper bound: routes with no flights cost less."""
     keys: set[tuple[str, str, date]] = set()
     for c in configs:
         start, end = date_window(c, today)
@@ -261,11 +263,12 @@ def _ryanair_requests(configs: list[SearchConfiguration], today: date) -> int:
             continue
         for m in month_starts(start, end):
             keys.add((c.origin, c.destination, m))
-        if c.trip_type == "return":
-            min_stay = c.min_stay_days if c.min_stay_days is not None else 1
-            max_stay = c.max_stay_days if c.max_stay_days is not None else 30
-            for m in month_starts(start + timedelta(days=min_stay), end + timedelta(days=max_stay)):
-                keys.add((c.destination, c.origin, m))
+            if c.trip_type == "return":
+                month_end = (m.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+                min_stay = c.min_stay_days if c.min_stay_days is not None else 1
+                max_stay = c.max_stay_days if c.max_stay_days is not None else 30
+                for r in month_starts(m + timedelta(days=min_stay), month_end + timedelta(days=max_stay)):
+                    keys.add((c.destination, c.origin, r))
     return len(keys) + (1 if keys else 0)
 
 

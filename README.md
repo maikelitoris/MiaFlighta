@@ -154,11 +154,20 @@ How alerts avoid repeats:
 * It is alerted again only if it gets at least 5% cheaper or its category improves.
 * Failed sends are retried on the next run.
 
+### Is it a good price?
+
+Ryanair does not publish past prices, and no free source of historical Ryanair fares exists. Google Flights and Skyscanner price graphs have no free API. The app therefore compares only with prices it has actually collected, in two ways:
+
+* **Other dates, from the first search on.** Each Ryanair request returns the cheapest fare for every day of a month. The app builds every other return trip of the same length from those calendars and ranks yours. For example: *"Average price: 5 of 13 other 3-night trips are cheaper (median €129.70). Cheaper: Sat 30 Jan → Tue 2 Feb €98.98"*. It labels a trip *good* when it's in the cheapest quarter, *expensive* when it's above most others, and says so when there are too few dates to compare.
+* **The same trip over time.** Every 12-hour search adds a price observation. From the second day on, the Telegram update and the Trips page show the low, the high and the trend since the first price.
+
+Every result is a **return trip**. It shows the going flight and the coming-back flight together, with their times and each leg's price, plus one booking link for both. On the Trips page, *Price calendar* shows a bar chart of daily fares around your going and coming-back dates.
+
 ### Request limits
 
 | Provider | Official limit | What the app does | Your trips |
 |---|---|---|---|
-| Ryanair fare finder | None published. The endpoints are undocumented and Ryanair can change them or start blocking at any time. Personal, non-commercial use only | One request every 3 s and at most 80 requests per run. Stops and pauses Ryanair for 24 h at the first CAPTCHA, challenge or 403, without trying to get around it | One request covers a whole month of fares in one direction. Trips in the same months share requests: 1 trip ≈ 9 requests, 4 trips in Jan–Feb ≈ 13 requests per run (~26 a day at 12 h) |
+| Ryanair fare finder | None published. The endpoints are undocumented and Ryanair can change them or start blocking at any time. Personal, non-commercial use only | One request every 3 s and at most 80 requests per run. Stops and pauses Ryanair for 24 h at the first CAPTCHA, challenge or 403, without trying to get around it | One request covers a whole month of fares in one direction. Trips in the same months share requests: the 29 Jan weekend from OPO+LIS to KRK+KTW is at most 13 requests per run (9 in practice, because Ryanair doesn't fly to Katowice from there), ~18–26 a day at 12 h. More weekends in Jan–Feb cost almost nothing extra |
 | Travelpayouts | About 600 requests/min | At most 100 requests per run, cached for 60 min | 1 request per airport pair and month. Skipped when no token is set |
 
 When one run would need more requests than a cap allows, the remaining searches in that run are skipped and logged. The Trips page shows the estimate before you add dates.

@@ -34,7 +34,7 @@ routes:
   seed_rolling_routes: false # true = also watch "the next N days" (lots more requests)
   origins: [OPO, LIS]        # FAO left out on purpose (too far)
   destinations: [KRK, KTW]
-  trip_types: [return, one_way]
+  trip_types: [return]       # always a return date: going and coming back are priced together
   days_ahead_min: 1          # rolling routes: search departures from tomorrow...
   days_ahead_max: 60         # ...up to 60 days ahead
   min_stay_days: 3           # return trips only
