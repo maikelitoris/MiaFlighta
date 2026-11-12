@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import create_engine, delete, event, select
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import AppConfig
 from app.core.timeutils import utcnow
 from app.models.db_models import Airport, Base, CachedResponse, SearchConfiguration
+from app.services.trips import is_trip_config
 
 log = logging.getLogger(__name__)
 
@@ -54,9 +55,11 @@ def seed_search_configurations(session: Session, config: AppConfig, *, sync: boo
     existing = session.scalars(select(SearchConfiguration)).all()
     if existing and not sync:
         return 0
-    keys = {(c.origin, c.destination, c.trip_type) for c in existing}
+    keys = {(c.origin, c.destination, c.trip_type) for c in existing if not is_trip_config(c)}
     r = config.routes
-    added = 0
+    added = seed_trips(session, config)
+    if not r.seed_rolling_routes:
+        return added
     for origin in r.origins:
         for dest in r.destinations:
             for trip in r.trip_types:
@@ -81,6 +84,22 @@ def seed_search_configurations(session: Session, config: AppConfig, *, sync: boo
                 )
                 added += 1
     session.commit()
+    return added
+
+
+def seed_trips(session: Session, config: AppConfig) -> int:
+    """Add the trips listed in config.yaml (skipping past ones and ones already present)."""
+    from app.services.trips import add_trip
+
+    added = 0
+    today = date.today()
+    for t in config.trips:
+        if t.outbound < today:
+            log.info("Skipping past trip %s from config.yaml", t.outbound)
+            continue
+        added += add_trip(session, config, t.outbound, t.back,
+                          t.origins or config.routes.origins, t.destinations or config.routes.destinations,
+                          max_price=t.max_price, today=today)
     return added
 
 

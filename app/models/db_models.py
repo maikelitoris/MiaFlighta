@@ -72,6 +72,30 @@ class SearchConfiguration(Base):
         return {int(x) for x in value.split(",") if x.strip() != ""}
 
 
+class DailyFare(Base):
+    """One observation of the cheapest one-way fare for a day and direction, as seen in
+    a provider's fare calendar (Ryanair). Never overwritten: every search appends, so
+    the same day can be compared over time and with other days."""
+
+    __tablename__ = "daily_fares"
+    __table_args__ = (Index("ix_daily_route_day_time", "origin", "destination", "day", "observed_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    origin: Mapped[str] = mapped_column(String(3))
+    destination: Mapped[str] = mapped_column(String(3))
+    day: Mapped[date] = mapped_column(Date)
+    price: Mapped[float] = mapped_column(Float)  # one adult
+    currency: Mapped[str] = mapped_column(String(3))
+    departure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # local time
+    arrival_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # local time
+    flight_number: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    search_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("search_runs.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class FlightOffer(Base):
     """One itinerary. The price columns hold the LATEST observation;
     every observation is kept in PriceHistory and never overwritten."""
