@@ -13,7 +13,7 @@ Nothing here is assumed to be free just because it has a developer portal.
 | Skyscanner Travel API | Partner only | Application | Yes | Live | Broad | Partner terms. Caching reportedly restricted | ❌ Requires an established business (around 100k monthly visitors) |
 | Kiwi.com Tequila | Closed | Invitation or partnership only since 2024 | — | — | — | — | ❌ Not available to individuals |
 | Aviasales Flight Search API (real-time) | — | Travelpayouts | — | Live | — | Needs a project with **50,000+ monthly active users** | ❌ Not eligible |
-| Ryanair website | — | — | — | — | — | — | ❌ Terms of use forbid automated access, scrapers and APIs. Ryanair actively litigates against screen-scrapers (Irish High Court injunction against a screen-scraper, 2026) |
+| **Ryanair fare finder** (the JSON endpoints ryanair.com itself uses) | ✅ Yes | No | No | **Real, live, airline-direct**: lowest fare per day, one adult, basic fare without bags | Ryanair only | We use ~30 requests per run at 1 request every 3 s | ✅ **Implemented, for personal use only.** Ryanair's terms allow use of the site, data and APIs for *private, non-commercial purposes*, and ban screen-scraping *for commercial purposes*. Ryanair litigates against commercial scrapers, so do not use or republish this commercially. Undocumented endpoints may change. Verified live on 12 Nov 2026 |
 | Wizz Air website | — | — | — | — | — | — | ❌ No public developer API. B2B distribution is via Kyte for travel sellers. Scraping not permitted. Will not be automated |
 | TAP / LOT / others | — | — | — | — | — | — | No public self-serve fare APIs found |
 | Google Flights | — | — | — | — | — | — | ❌ No API. Automated access is against Google's terms |
@@ -37,9 +37,22 @@ Its limits, and how the app handles each:
 * **No baggage data.** Baggage is stored as *unknown* and never assumed.
 * **Prices are per adult.** For several passengers the app multiplies the price, which is an approximation.
 
-## Browser automation (Playwright)
+## Web scraping
 
-No permitted target was found. Every airline and meta-search site checked either forbids automated access in its terms or protects itself with bot detection. So the MVP **does not include a browser-automation provider**, and Playwright is not installed.
+The Ryanair provider (`app/providers/ryanair.py`) is the one scraping approach that fits the project rules:
+
+* **What it calls.** It requests the same public JSON the ryanair.com fare calendar uses. One request returns a month of daily lowest fares, which is much lighter than driving a browser.
+* **Honest client.** It sends an honest `FlightRadar/…` User-Agent and does not pretend to be a browser.
+* **Low volume.** It caches responses and waits 3 seconds between requests.
+* **Stops on blocks.** It stops for 24 hours on any CAPTCHA, challenge or denial.
+* **Diagnostic.** `python scripts/check_ryanair.py` checks it.
+
+Excluded on purpose:
+
+* **Wizz Air**: its website terms prohibit screen-scraping, and its booking API sits behind Kasada bot protection. Getting through would mean evading bot detection, which this project does not do.
+* **Google Flights / Skyscanner / Kayak websites**: their terms prohibit automated access. Use a paid API vendor instead (see [PAID_APIS.md](PAID_APIS.md)).
+
+**Playwright is not needed.** The Ryanair endpoints return JSON directly. Running a headless browser would only add load and mostly serves to look like a human, which we explicitly avoid.
 
 The shared HTTP client already has the safety behaviour the brief asks for:
 
@@ -76,9 +89,11 @@ A future Playwright provider must reuse this, and should only be added for a sit
 * Kiwi Tequila:
   * [Ignav notes](https://ignav.com/docs/kiwi-tequila-alternative)
 * Ryanair:
-  * [Terms of use](https://www.ryanair.com/ie/terms-of-use/)
+  * [Terms of use](https://www.ryanair.com/gb/en/lp/legal/terms-of-use)
+  * [Endpoint reference: ryanair-py](https://pypi.org/project/ryanair-py)
   * [High Court ruling](https://corporate.ryanair.com/news/ryanair-welcomes-high-court-ruling-confirming-screenscraping-is-unlawful/)
 * Wizz Air:
+  * [Website terms (DE)](https://wizzair.com/cms/api/docs/default-source/downloadable-documents/website_terms_and_conditions_de_4a3bca35-bc8c-4a18-a2c3-816d1252fe9b.pdf)
   * [Kyte distribution](https://www.altexsoft.com/travel-industry-news/wizz-air-opens-api-access-to-travel-sellers-through-kyte/)
 * SerpApi:
   * [Pricing overview](https://www.costbench.com/software/web-scraping/serpapi/free-plan/)

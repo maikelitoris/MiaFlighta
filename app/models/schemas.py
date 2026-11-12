@@ -36,6 +36,10 @@ class SearchQuery(BaseModel):
     return_date: date | None = None
     passengers: int = Field(1, ge=1, le=9)
     currency: str = "EUR"
+    # Optional hints for providers that build return trips themselves (e.g. Ryanair).
+    min_stay_days: int | None = None
+    max_stay_days: int | None = None
+    return_weekdays: list[int] = []
 
     @field_validator("origin", "destination")
     @classmethod

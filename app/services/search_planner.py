@@ -25,11 +25,18 @@ def plan_queries(
     if end < start:
         return []
     trip = TripType(cfg.trip_type)
+    hints = {}
+    if trip == TripType.RETURN:
+        hints = dict(
+            min_stay_days=cfg.min_stay_days,
+            max_stay_days=cfg.max_stay_days,
+            return_weekdays=sorted(SearchConfiguration.parse_weekdays(cfg.return_weekdays)),
+        )
     if month_search:
         return [
             SearchQuery(
                 origin=cfg.origin, destination=cfg.destination, trip_type=trip,
-                departure_month=m, passengers=cfg.passengers, currency=currency,
+                departure_month=m, passengers=cfg.passengers, currency=currency, **hints,
             )
             for m in month_starts(start, end)
         ]
@@ -42,7 +49,7 @@ def plan_queries(
             queries.append(
                 SearchQuery(
                     origin=cfg.origin, destination=cfg.destination, trip_type=trip,
-                    departure_date=d, passengers=cfg.passengers, currency=currency,
+                    departure_date=d, passengers=cfg.passengers, currency=currency, **hints,
                 )
             )
         d += timedelta(days=1)

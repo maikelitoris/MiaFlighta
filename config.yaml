@@ -52,6 +52,16 @@ providers:
     max_retries: 3
     max_requests_per_run: 100   # hard cap to protect the free quota
     result_limit: 1000
+  # Ryanair's own fare finder (the JSON the ryanair.com site itself uses).
+  # Personal, non-commercial use only (allowed by Ryanair's website terms).
+  # Honest User-Agent, tiny volume, stops immediately on any block. Remove this
+  # block or disable it in the dashboard if you don't want it.
+  ryanair:
+    enabled: true
+    min_interval_seconds: 3     # extra polite: one request every 3 s
+    cache_ttl_minutes: 60
+    max_retries: 2
+    max_requests_per_run: 80
 
 scoring:
   # Points by effective price PER PASSENGER (lowest matching threshold wins).
@@ -65,6 +75,7 @@ scoring:
   history_discount_pct: 30      # at least this much below comparable history...
   history_points: 30            # ...earns these points
   history_min_samples: 8        # comparable offers needed before history is trusted
+  history_min_days: 3           # ...observed on at least this many different days
   history_lookback_days: 60
   stay_tolerance_days: 2        # return trips compared with stays of +/- N days
   direct_points: 10

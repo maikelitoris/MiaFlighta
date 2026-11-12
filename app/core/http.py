@@ -116,6 +116,22 @@ class PoliteHttpClient:
                 return min(float(retry_after), 300.0)
         return self.backoff_base * (2**attempt)
 
+    def visit(self, url: str) -> int:
+        """Load a normal page once (e.g. to receive the site's session cookies, as any
+        browser would). Only a clear challenge/denial response counts as blocked here,
+        because ordinary HTML pages often mention 'captcha' in their scripts."""
+        self._wait_turn()
+        self.requests_made += 1
+        try:
+            response = self._client.get(url, headers={"Accept": "text/html"})
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise ProviderTemporaryError(f"{self.provider}: could not load {url}: {exc}") from exc
+        if response.status_code in (403, 429, 503) and looks_like_bot_challenge(response):
+            raise ProviderBlockedError(
+                f"{self.provider}: bot challenge / access denied on {url} (HTTP {response.status_code})"
+            )
+        return response.status_code
+
     def get_json(
         self,
         url: str,
@@ -174,7 +190,7 @@ class PoliteHttpClient:
                     self._sleep(wait)
                 continue
             if status >= 400:
-                raise ProviderRequestError(f"{self.provider}: HTTP {status}: {response.text[:300]}")
+                raise ProviderRequestError(f"{self.provider}: HTTP {status}: {response.text[:300]}", status)
             try:
                 data = response.json()
             except ValueError as exc:

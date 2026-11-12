@@ -33,6 +33,7 @@ class Baseline:
     lowest: float
     samples: int  # number of comparable offers
     lookback_days: int
+    observation_days: int = 0
 
 
 @dataclass
@@ -64,6 +65,7 @@ def comparable_baseline(
             FlightOffer.return_departure_at,
             FlightOffer.baggage_included,
             PriceHistory.observed_price,
+            PriceHistory.observed_at,
         )
         .join(PriceHistory, PriceHistory.offer_id == FlightOffer.id)
         .where(
@@ -78,7 +80,8 @@ def comparable_baseline(
     ).all()
     my_stay = _stay(offer.departure_at, offer.return_departure_at)
     per_offer: dict[int, list[float]] = defaultdict(list)
-    for oid, dep, ret, bag, price in rows:
+    days: set = set()
+    for oid, dep, ret, bag, price, observed_at in rows:
         if bag != offer.baggage_included:  # compare like with like (None = unknown)
             continue
         if my_stay is not None:
@@ -86,8 +89,10 @@ def comparable_baseline(
             if stay is None or abs(stay - my_stay) > sc.stay_tolerance_days:
                 continue
         per_offer[oid].append(price)
+        days.add(observed_at.date())
     samples = len(per_offer)
-    if samples < sc.history_min_samples:
+    # A real history needs observations over time, not just many fares from one search.
+    if samples < sc.history_min_samples or len(days) < sc.history_min_days:
         return None, samples
     typical = [statistics.median(prices) for prices in per_offer.values()]
     return (
@@ -97,6 +102,7 @@ def comparable_baseline(
             lowest=round(min(min(p) for p in per_offer.values()), 2),
             samples=samples,
             lookback_days=sc.history_lookback_days,
+            observation_days=len(days),
         ),
         samples,
     )

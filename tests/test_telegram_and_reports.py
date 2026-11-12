@@ -38,7 +38,7 @@ def test_message_without_history_says_so(session, config):
     offer = stored(session, price=45, destination="KTW")
     a = assess(offer, config, None, 2)
     msg = format_deal_message(offer, a, None, None, "bus estimate")
-    assert "not enough comparable data yet (2 offers)" in msg
+    assert "not enough comparable data yet (2 offers;" in msg
     assert "ground transfer" in msg and "Effective price" in msg
 
 

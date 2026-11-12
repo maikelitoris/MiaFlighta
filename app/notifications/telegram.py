@@ -14,7 +14,10 @@ from app.services.deal_engine import DealAssessment
 
 log = logging.getLogger(__name__)
 
-PROVIDER_LABELS = {"travelpayouts": "Travelpayouts / Aviasales Data API (cached prices)"}
+PROVIDER_LABELS = {
+    "travelpayouts": "Travelpayouts / Aviasales Data API (cached prices)",
+    "ryanair": "Ryanair fare finder (airline's current lowest fare, basic fare without bags)",
+}
 TELEGRAM_MAX_LEN = 4096
 
 
@@ -95,8 +98,8 @@ def format_deal_message(
             lines.append(f"Price difference: {-assessment.discount_pct:+.0f}%")
     else:
         lines.append(
-            f"History: not enough comparable data yet ({assessment.comparable_samples} offers) — "
-            "no historical comparison made."
+            f"History: not enough comparable data yet ({assessment.comparable_samples} offers; "
+            "needs several days of observations) — no historical comparison made."
         )
     lines += [
         "",

@@ -8,6 +8,7 @@ No paid service, subscription, proxy, server or AI API is used.
 | Python, SQLAlchemy, Pydantic, httpx, APScheduler, Streamlit, pandas, pytest, python-dotenv, PyYAML, tzdata | Free, open source | No | — | No |
 | python-telegram-bot + Telegram Bot API | Free | Telegram account, then create a bot with @BotFather | About 30 messages/sec. We send a handful per day | No |
 | SQLite database (`data/flight_radar.db`) | Free, local file | No | — | No |
+| Ryanair fare finder (personal use) | Free | No | We self-limit to 1 request every 3 s, about 30 per run | No |
 | Travelpayouts / Aviasales Data API | Free | Travelpayouts account, then copy the API token | About 600 requests/min. We use about 30 requests every 6 hours | Not for the Data API |
 | Your computer (runs scheduler + dashboard) | Electricity only | — | Must stay on and running | — |
 | Docker (optional) | Free | No | — | Docker Desktop is free for personal use |
@@ -18,6 +19,14 @@ No paid service, subscription, proxy, server or AI API is used.
 * At 4 runs per day, that is **about 120 requests per day**.
 * Identical requests within `cache_ttl_minutes` come from the local cache instead.
 * `max_requests_per_run` puts a hard cap on each run.
+
+## Paid APIs
+
+Prices and an estimate of what each would cost for our search volume are in [docs/PAID_APIS.md](docs/PAID_APIS.md). In short:
+
+* **Ignav**: about $10–15/month for weekend-only searches.
+* **SearchApi.io**: $40/month flat for calendar searches.
+* Everything else costs more or isn't available to individuals.
 
 ## Things that would cost money (NOT used, need your approval first)
 

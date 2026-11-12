@@ -27,3 +27,7 @@ class ProviderTemporaryError(ProviderError):
 
 class ProviderRequestError(ProviderError):
     """Invalid request or unexpected response; retrying would not help."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code

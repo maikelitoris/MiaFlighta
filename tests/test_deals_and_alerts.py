@@ -29,10 +29,15 @@ def store(session, **kw) -> FlightOffer:
     return session.get(FlightOffer, res.offer_ids[0])
 
 
-def add_comparables(session, n, price, days_start=20, **kw):
+def add_comparables(session, n, price, days_start=20, spread_days=3, **kw):
+    """Comparable TEST DATA offers, observed over `spread_days` different days."""
     for i in range(n):
-        store(session, departure_at=future(days_start + i, 9), return_departure_at=future(days_start + i + 7, 12),
-              price=price, flight_number=str(5000 + i), **kw)
+        offer = store(session, departure_at=future(days_start + i, 9),
+                      return_departure_at=future(days_start + i + 7, 12),
+                      price=price, flight_number=str(5000 + i), **kw)
+        for h in offer.history:
+            h.observed_at = h.observed_at - timedelta(days=i % spread_days)
+    session.commit()
 
 
 # ---------------------------------------------------------------- scoring
@@ -60,9 +65,17 @@ def test_history_discount_points(session, config):
     offer = store(session, price=90)
     a = assess_offer(session, offer, config)
     assert a.baseline is not None and a.baseline.median == 200 and a.baseline.samples == 8
+    assert a.baseline.observation_days == 3
     assert a.discount_pct == 55.0
     # <100 (+40) + history (+30) + direct (+10) + convenient (+10) = 90
     assert a.score == 90 and a.category == "excellent"
+
+
+def test_single_day_of_observations_is_not_history(session, config):
+    add_comparables(session, 20, 200, spread_days=1)  # many fares, but all seen today
+    offer = store(session, price=90)
+    baseline, samples = comparable_baseline(session, offer, config)
+    assert samples == 20 and baseline is None
 
 
 def test_comparable_excludes_different_stays_and_baggage(session, config):

@@ -10,10 +10,12 @@ Flight Radar is a personal flight price monitor for **Portugal (OPO, LIS, FAO) �
 
 It runs entirely on your own computer. **Recurring cost: €0** (see [COSTS.md](COSTS.md)).
 
-> **Honest limitations.** The only free and legitimate price source available to an individual today is the Travelpayouts / Aviasales Data API. (Amadeus Self-Service shut down in July 2026; see [docs/PROVIDERS.md](docs/PROVIDERS.md).)
+> **Data sources (both free).**
 >
-> * Its prices are **cached**: real fares that Aviasales users found recently, which may have changed since. Every price is labelled *indicative*.
-> * Coverage is incomplete, especially for Ryanair and Wizz Air. Always confirm on the airline's site before booking.
+> * **Ryanair fare finder**: live, airline-direct Ryanair fares, for personal, non-commercial use as Ryanair's terms allow. No key needed.
+> * **Travelpayouts / Aviasales Data API**: **cached** fares for other airlines, so they may have changed. Needs a free token.
+>
+> Every price is labelled *indicative* until you open the booking page. Wizz Air is not covered live, because its terms forbid scraping. Amadeus Self-Service shut down in July 2026. See [docs/PROVIDERS.md](docs/PROVIDERS.md), and [docs/PAID_APIS.md](docs/PAID_APIS.md) for paid options and their costs.
 
 ## 1. Install (once)
 
@@ -37,6 +39,7 @@ cp .env.example .env          # Windows: copy .env.example .env
    ```bash
    python main.py check
    python scripts/check_travelpayouts.py        # one real request; shows raw + normalized data
+   python scripts/check_ryanair.py              # Ryanair works without any key
    ```
 
 ### Create the Telegram bot (free)
@@ -104,7 +107,7 @@ Categories: **70 or more = excellent**, **50–69 = good**, below 50 = normal.
 How the history comparison works:
 
 * "Comparable" means the same route, trip type, currency and passenger count, the same baggage status, and a stay within ±2 days.
-* At least 8 comparable itineraries from the last 60 days are needed. Until then, **no historical claim is made**, and the alert says so.
+* At least 8 comparable itineraries from the last 60 days, observed on at least 3 different days, are needed. Until then, **no historical claim is made**, and the alert says so.
 
 How alerts avoid repeats:
 

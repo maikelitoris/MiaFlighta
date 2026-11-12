@@ -78,6 +78,7 @@ class ScoringConfig(BaseModel):
     history_discount_pct: float = 30
     history_points: int = 30
     history_min_samples: int = 8
+    history_min_days: int = 3
     history_lookback_days: int = 60
     stay_tolerance_days: int = 2
     direct_points: int = 10
