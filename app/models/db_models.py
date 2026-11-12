@@ -46,6 +46,9 @@ class SearchConfiguration(Base):
     date_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     days_ahead_min: Mapped[int] = mapped_column(Integer, default=1)
     days_ahead_max: Mapped[int] = mapped_column(Integer, default=60)
+    # Optional return-date window (return trips). Works together with the stay length.
+    return_date_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    return_date_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_stay_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     departure_weekdays: Mapped[str] = mapped_column(String(20), default="")  # "4,5"

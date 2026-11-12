@@ -2,7 +2,8 @@
 
 Flight Radar is a personal flight price monitor for **Portugal (OPO, LIS, FAO) → Kraków (KRK) / Katowice (KTW)**. It:
 
-* searches automatically every 6 hours;
+* searches automatically every 12 hours;
+* sends a Telegram price summary every 12 hours, plus an instant alert for good deals;
 * stores every price it observes in a local SQLite database;
 * scores deals with configurable rules;
 * sends Telegram alerts for good and excellent deals;
@@ -59,7 +60,26 @@ python main.py search      # manual search now
 python main.py status      # status + best current offers in the terminal
 python main.py dashboard   # dashboard at http://localhost:8501
 python main.py run         # automatic mode: scheduler + Telegram bot (leave it running)
+python main.py digest      # send the 12-hour Telegram summary right now (--print to only show it)
+./scripts/start.sh         # run + dashboard together (WSL/Linux/macOS)
 ```
+
+### Telegram every 12 hours
+
+While `python main.py run` is running you get:
+
+* a **summary every 12 hours** (`digest.every_hours` in `config.yaml`, 0 = off) with the cheapest current offer per route within your budget — even when nothing is a "deal";
+* an **instant alert** whenever a good or excellent deal appears.
+
+The last summary time is stored in the database, so restarting doesn't send duplicates. If the PC was asleep, the overdue summary goes out at the next check.
+
+### Starting it automatically on Windows (WSL)
+
+1. Find the project path inside WSL (for example `/home/<you>/MiaFlighta`).
+2. Open **Task Scheduler → Create Task**. Trigger: *At log on*. Action: *Start a program*
+   * Program: `wsl.exe`
+   * Arguments: `-d Ubuntu-24.04 -- bash -lc "/home/<you>/MiaFlighta/scripts/start.sh"`
+3. In Windows *Power & sleep*, set the PC to never sleep while plugged in (searches pause while it sleeps).
 
 **Automatic searches only happen while `python main.py run` is running and your computer is awake.** If the computer sleeps or the app is closed, nothing is searched. When it comes back, any overdue routes are searched at the next scheduler check (every 30 minutes).
 
@@ -74,9 +94,12 @@ Run the dashboard in a second terminal next to `run`. To start it automatically 
 | `/routes` | Monitored routes with their ids |
 | `/budget` | Show the budget. `/budget 120` sets the global budget; `/budget 3 90` sets route #3; `/budget 3 off` resets it |
 | `/search` | Run a search now |
+| `/summary` | The 12-hour price summary, now |
 | `/help` | Help |
 
 ### Dashboard pages
+
+* **Trip dates**: pick when you go and when you come back on a calendar — exact date ranges or a rolling window, stay length, weekdays, and presets like *Weekend (Fri/Sat → Sun/Mon)*. A live calendar shows the selected days, and **Apply** updates the routes. The *Price calendar* tab colours each outbound day by its cheapest price and shows a going × coming-back price grid.
 
 * **Overview**: cheapest offers, best deals, a *Run search now* button, provider health, latest runs.
 * **Flight Search**: filter stored offers by airport, dates, price, airline and stops.

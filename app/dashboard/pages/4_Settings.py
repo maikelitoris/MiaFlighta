@@ -88,16 +88,19 @@ def wd(text: str) -> list[str]:
 df = pd.DataFrame([{
     "id": c.id, "enabled": c.enabled, "origin": c.origin, "destination": c.destination, "trip_type": c.trip_type,
     "date_from": c.date_from, "date_to": c.date_to, "days_ahead_min": c.days_ahead_min,
-    "days_ahead_max": c.days_ahead_max, "min_stay_days": c.min_stay_days, "max_stay_days": c.max_stay_days,
+    "days_ahead_max": c.days_ahead_max, "return_date_from": c.return_date_from,
+    "return_date_to": c.return_date_to, "min_stay_days": c.min_stay_days, "max_stay_days": c.max_stay_days,
     "departure_weekdays": ",".join(wd(c.departure_weekdays)), "return_weekdays": ",".join(wd(c.return_weekdays)),
     "passengers": c.passengers, "max_price": c.max_price, "frequency_hours": c.frequency_hours,
 } for c in configs])
-st.caption("Edit cells and press Save. Absolute dates (date_from/date_to) override the rolling 'days ahead' window. "
+st.caption("Tip: the **Trip dates** page is the easy way to pick outbound and return dates. "
+           "Edit cells and press Save. Absolute dates (date_from/date_to) override the rolling 'days ahead' window. "
            "Weekdays: comma separated, e.g. `Fri,Sat` (empty = any). max_price empty = global budget.")
 edited = st.data_editor(
     df, hide_index=True, disabled=["id", "origin", "destination", "trip_type"], key="routes_editor",
     column_config={
         "date_from": st.column_config.DateColumn(), "date_to": st.column_config.DateColumn(),
+        "return_date_from": st.column_config.DateColumn(), "return_date_to": st.column_config.DateColumn(),
         "max_price": st.column_config.NumberColumn(min_value=1),
         "passengers": st.column_config.NumberColumn(min_value=1, max_value=9),
         "frequency_hours": st.column_config.NumberColumn(min_value=1),
@@ -129,6 +132,9 @@ if st.button("Save routes"):
                 c.date_to = none_if_nan(row["date_to"])
                 c.days_ahead_min = int(row["days_ahead_min"])
                 c.days_ahead_max = int(row["days_ahead_max"])
+                if c.trip_type == "return":
+                    c.return_date_from = none_if_nan(row["return_date_from"])
+                    c.return_date_to = none_if_nan(row["return_date_to"])
                 c.min_stay_days = none_if_nan(row["min_stay_days"]) and int(row["min_stay_days"])
                 c.max_stay_days = none_if_nan(row["max_stay_days"]) and int(row["max_stay_days"])
                 c.departure_weekdays = parse_wd(row["departure_weekdays"])

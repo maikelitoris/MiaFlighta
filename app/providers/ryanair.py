@@ -180,6 +180,8 @@ class RyanairProvider(FlightProvider):
                         f for d, f in in_fares.items()
                         if min_stay <= (d - out.day).days <= max_stay
                         and (not weekdays or d.weekday() in weekdays)
+                        and (query.return_date_from is None or d >= query.return_date_from)
+                        and (query.return_date_to is None or d <= query.return_date_to)
                         and f.departure > (out.arrival or out.departure)
                         and f.currency == out.currency
                     ]

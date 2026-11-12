@@ -34,7 +34,7 @@ routes:
   return_weekdays: []        # e.g. departure [4, 5] + return [6, 0] = weekend trips
   passengers: 1
   max_price: null            # null = use default_max_price
-  frequency_hours: 6
+  frequency_hours: 12
 
 # Katowice is an ALTERNATIVE destination, not equivalent to Kraków.
 # The ground cost of getting from the airport to Kraków is added (per direction,
@@ -91,6 +91,12 @@ alerts:
   min_category: good            # "excellent" or "good"
   realert_price_drop_pct: 5     # re-notify an already alerted offer only if it got this much cheaper
   max_alerts_per_run: 10
+
+# Regular Telegram summary with the cheapest current offer per route
+# (sent even when nothing scores as a "deal"; deal alerts still arrive at once).
+digest:
+  every_hours: 12               # 0 = off
+  max_routes: 8
 
 scheduler:
   tick_minutes: 30              # how often the scheduler checks which routes are due
