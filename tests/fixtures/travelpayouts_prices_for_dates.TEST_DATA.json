@@ -1,0 +1,41 @@
+{
+  "_comment": "TEST DATA ONLY — synthetic response shaped like the Travelpayouts /aviasales/v3/prices_for_dates API. These are NOT real flight results or prices.",
+  "success": true,
+  "currency": "eur",
+  "data": [
+    {
+      "origin": "OPO", "destination": "KRK", "origin_airport": "OPO", "destination_airport": "KRK",
+      "price": 45, "airline": "FR", "flight_number": "1234",
+      "departure_at": "2027-03-05T06:30:00+00:00", "return_at": "2027-03-12T10:15:00+01:00",
+      "transfers": 0, "return_transfers": 0, "duration": 410, "duration_to": 205, "duration_back": 205,
+      "link": "/search/OPO0503KRK12031?t=TESTDATA"
+    },
+    {
+      "origin": "OPO", "destination": "KRK", "origin_airport": "OPO", "destination_airport": "KRK",
+      "price": 132.5, "airline": "LO", "flight_number": 432,
+      "departure_at": "2027-03-06T13:00:00+00:00", "return_at": "2027-03-11T18:00:00+01:00",
+      "transfers": 1, "return_transfers": 1, "duration": 700, "duration_to": 350, "duration_back": 350,
+      "link": "/search/OPO0603KRK11031?t=TESTDATA2"
+    },
+    {
+      "origin": "OPO", "destination": "KRK", "origin_airport": "OPO", "destination_airport": "KRK",
+      "price": 99, "airline": "", "flight_number": "",
+      "departure_at": "2027-03-07T22:30:00+00:00", "return_at": "2027-03-20T07:00:00+01:00",
+      "transfers": 1, "return_transfers": 0,
+      "link": "/search/OPO0703KRK20031?t=TESTDATA3"
+    },
+    {
+      "origin": "LIS", "destination": "KRK", "origin_airport": "LIS", "destination_airport": "KRK",
+      "price": 60, "airline": "W6", "flight_number": "9999",
+      "departure_at": "2027-03-08T09:00:00+00:00", "return_at": "2027-03-12T10:00:00+01:00",
+      "transfers": 0, "return_transfers": 0, "duration_to": 210, "duration_back": 215,
+      "link": "/search/x"
+    },
+    {
+      "origin": "OPO", "destination": "KRK", "origin_airport": "OPO", "destination_airport": "KRK",
+      "price": "not-a-number", "airline": "FR", "flight_number": "1",
+      "departure_at": "2027-03-09T09:00:00+00:00", "return_at": "2027-03-12T10:00:00+01:00",
+      "transfers": 0, "return_transfers": 0
+    }
+  ]
+}

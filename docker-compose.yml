@@ -1,0 +1,17 @@
+# OPTIONAL — `docker compose up -d` runs the scheduler/bot and the dashboard locally.
+# The SQLite database lives in ./data on your computer (bind mount). No cloud services.
+services:
+  radar:
+    build: .
+    command: python main.py run
+    env_file: .env
+    volumes: ["./data:/app/data", "./config.yaml:/app/config.yaml:ro"]
+    restart: unless-stopped
+  dashboard:
+    build: .
+    command: python -m streamlit run app/dashboard/Overview.py --server.address 0.0.0.0 --server.port 8501 --browser.gatherUsageStats false
+    environment: ["PYTHONPATH=/app"]
+    env_file: .env
+    ports: ["127.0.0.1:8501:8501"]
+    volumes: ["./data:/app/data", "./config.yaml:/app/config.yaml:ro"]
+    restart: unless-stopped

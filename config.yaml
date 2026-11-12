@@ -1,0 +1,89 @@
+# Flight Radar configuration.
+#
+# This file holds the DEFAULTS. On first start (`python main.py init`) the
+# airports and routes below are copied into the local SQLite database.
+# After that, the database is the source of truth: change routes, budgets and
+# frequency in the dashboard (Settings page) or via Telegram (/budget).
+# Run `python main.py init --sync-routes` to add newly listed routes later.
+
+currency: EUR
+
+# Global budget: maximum price PER PASSENGER for the whole trip
+# (one-way price for one-way searches, total return price for return searches),
+# including estimated ground transfer costs (see transfer_costs).
+# A route can override this with its own max_price.
+default_max_price: 150
+
+airports:
+  - {iata: OPO, name: "Francisco Sá Carneiro Airport", city: Porto, country: Portugal, timezone: Europe/Lisbon}
+  - {iata: LIS, name: "Humberto Delgado Airport", city: Lisbon, country: Portugal, timezone: Europe/Lisbon}
+  - {iata: FAO, name: "Faro Airport", city: Faro, country: Portugal, timezone: Europe/Lisbon}
+  - {iata: KRK, name: "John Paul II International Airport Kraków-Balice", city: Kraków, country: Poland, timezone: Europe/Warsaw}
+  - {iata: KTW, name: "Katowice Wojciech Korfanty Airport", city: Katowice, country: Poland, timezone: Europe/Warsaw}
+
+# Every origin x destination x trip type becomes one search configuration.
+routes:
+  origins: [OPO, LIS, FAO]
+  destinations: [KRK, KTW]
+  trip_types: [return, one_way]
+  days_ahead_min: 1          # search departures from tomorrow...
+  days_ahead_max: 60         # ...up to 60 days ahead
+  min_stay_days: 3           # return trips only
+  max_stay_days: 10
+  departure_weekdays: []     # [] = any day. 0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Sat 6=Sun
+  return_weekdays: []        # e.g. departure [4, 5] + return [6, 0] = weekend trips
+  passengers: 1
+  max_price: null            # null = use default_max_price
+  frequency_hours: 6
+
+# Katowice is an ALTERNATIVE destination, not equivalent to Kraków.
+# The ground cost of getting from the airport to Kraków is added (per direction,
+# per passenger) when scoring deals and checking budgets.
+transfer_costs:
+  KTW:
+    amount: 15
+    note: "Katowice Airport -> Kraków by bus (rough estimate, please verify and adjust)"
+
+providers:
+  travelpayouts:
+    enabled: true
+    min_interval_seconds: 1.5   # polite gap between requests
+    cache_ttl_minutes: 60       # identical requests within this window use the local cache
+    max_retries: 3
+    max_requests_per_run: 100   # hard cap to protect the free quota
+    result_limit: 1000
+
+scoring:
+  # Points by effective price PER PASSENGER (lowest matching threshold wins).
+  price_points:
+    one_way:
+      - {below: 50, points: 40}
+      - {below: 70, points: 25}
+    return:
+      - {below: 100, points: 40}
+      - {below: 140, points: 25}
+  history_discount_pct: 30      # at least this much below comparable history...
+  history_points: 30            # ...earns these points
+  history_min_samples: 8        # comparable offers needed before history is trusted
+  history_lookback_days: 60
+  stay_tolerance_days: 2        # return trips compared with stays of +/- N days
+  direct_points: 10
+  convenient_departure:
+    earliest: "07:00"
+    latest: "21:00"
+    points: 10
+  baggage_points: 10
+  excellent_min: 70
+  good_min: 50
+
+alerts:
+  min_category: good            # "excellent" or "good"
+  realert_price_drop_pct: 5     # re-notify an already alerted offer only if it got this much cheaper
+  max_alerts_per_run: 10
+
+scheduler:
+  tick_minutes: 30              # how often the scheduler checks which routes are due
+  blocked_pause_hours: 24       # pause a provider this long after a CAPTCHA / access-denied response
+
+dashboard:
+  current_offer_hours: 24       # offers seen within this window count as "current"
