@@ -113,6 +113,14 @@ class AlertsConfig(BaseModel):
     max_alerts_per_run: int = 10
 
 
+class ReportsConfig(BaseModel):
+    digest_every_run: bool = True  # Telegram price update after every scheduled search
+    weekly_report: bool = True
+    weekly_day: int = Field(6, ge=0, le=6)  # 0=Mon ... 6=Sun
+    weekly_hour: int = Field(19, ge=0, le=23)  # local time of this computer
+    report_days: int = Field(7, ge=1, le=60)
+
+
 class SchedulerConfig(BaseModel):
     tick_minutes: float = 30
     blocked_pause_hours: float = 24
@@ -138,6 +146,7 @@ class AppConfig(BaseModel):
     providers: dict[str, ProviderConfig] = {"travelpayouts": ProviderConfig()}
     scoring: ScoringConfig = ScoringConfig()
     alerts: AlertsConfig = AlertsConfig()
+    reports: ReportsConfig = ReportsConfig()
     scheduler: SchedulerConfig = SchedulerConfig()
     dashboard: DashboardConfig = DashboardConfig()
     database_path: str = "data/flight_radar.db"

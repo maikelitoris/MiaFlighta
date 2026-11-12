@@ -101,6 +101,14 @@ alerts:
   realert_price_drop_pct: 5     # re-notify an already alerted offer only if it got this much cheaper
   max_alerts_per_run: 10
 
+# Regular Telegram messages besides deal alerts.
+reports:
+  digest_every_run: true        # after every scheduled search: current best price per trip, deal or not
+  weekly_report: true           # lowest prices of the week + best pick
+  weekly_day: 6                 # 0=Mon ... 6=Sun
+  weekly_hour: 19               # local time; sent at the next check if the computer was off then
+  report_days: 7
+
 scheduler:
   tick_minutes: 30              # how often the scheduler checks which routes are due
   blocked_pause_hours: 24       # pause a provider this long after a CAPTCHA / access-denied response

@@ -54,7 +54,7 @@ Only your chat id can use the bot's commands.
 ## 2. Use it
 
 ```bash
-python main.py init        # create data/flight_radar.db and the 12 default routes
+python main.py init        # create data/flight_radar.db and the trips from config.yaml
 python main.py search      # manual search now
 python main.py status      # status + best current offers in the terminal
 python main.py dashboard   # dashboard at http://localhost:8501
@@ -63,7 +63,36 @@ python main.py run         # automatic mode: scheduler + Telegram bot (leave it 
 
 **Automatic searches only happen while `python main.py run` is running and your computer is awake.** If the computer sleeps or the app is closed, nothing is searched. When it comes back, any overdue routes are searched at the next scheduler check (every 30 minutes).
 
-Run the dashboard in a second terminal next to `run`. To start it automatically at login, use Task Scheduler (Windows), a Login Item or launchd (macOS), or a systemd user service / `@reboot` cron entry (Linux).
+Run the dashboard in a second terminal next to `run`.
+
+### Keep it running all the time
+
+`python scripts/keep_running.py` runs `main.py run` and restarts it whenever it stops (a crash, or no internet at startup). It waits longer between restarts if the app keeps failing straight away.
+
+**Windows: start automatically at log-in.** Run this once from the project folder, in a normal PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\install_autostart.ps1
+```
+
+* It creates a **FlightRadar** task in Task Scheduler for your user. The task starts `keep_running.py` hidden at every log-in, and Windows restarts the task too if it ever ends.
+* Nothing is downloaded or installed.
+* `scripts\windows\uninstall_autostart.ps1` removes it.
+* Logs are in `data\logs\`: `flight_radar.log`, `keep_running.log` and `crash.log`.
+
+**macOS / Linux:** add `@reboot cd /path/to/project && .venv/bin/python scripts/keep_running.py` with `crontab -e`, or use a launchd agent or systemd user service.
+
+**The computer must be on and awake.** Searches can't run while it's off or asleep: set *sleep when plugged in* to *Never*. After a sleep, missed searches run at the next check, and a weekly report that was due is sent then. The weekly report also counts completed searches, so you'll notice if the PC was off.
+
+### Telegram messages
+
+| Message | When |
+|---|---|
+| **Price update** | After every scheduled search (every 12 h): the current best price of every watched trip, **deal or not**, the change since the last check, and the lowest price seen so far |
+| **Weekly report** | Sunday 19:00 by default (`config.yaml → reports`): the week's lowest, current and highest price per trip, the trend, and the best pick right now. It says when there is too little history to judge |
+| **Deal alert** | When an offer scores *good* or *excellent* (see Deal scoring) |
+
+Both regular messages can be turned off, previewed or sent immediately on the dashboard's Trips page.
 
 ### Telegram commands
 
@@ -71,6 +100,8 @@ Run the dashboard in a second terminal next to `run`. To start it automatically 
 |---|---|
 | `/status` | Health, last search, provider state |
 | `/deals` | Best current offers |
+| `/trips` | Latest price for every watched trip |
+| `/report` | Weekly report now |
 | `/routes` | Monitored routes with their ids |
 | `/budget` | Show the budget. `/budget 120` sets the global budget; `/budget 3 90` sets route #3; `/budget 3 off` resets it |
 | `/search` | Run a search now |

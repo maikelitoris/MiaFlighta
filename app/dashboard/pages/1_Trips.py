@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.airlines import airline_name
 from app.models.db_models import Airport, SearchConfiguration
+from app.services import digest, settings_service
 from app.services import trips as trip_service
 
 ctx = page_setup("Trips")
@@ -243,6 +244,36 @@ with f2:
     st.caption("Automatic searches only happen while `python main.py run` is running on your computer. "
                "Ryanair publishes no official quota: the app keeps itself to one request every 3 s and stops "
                "for 24 h at the first block or CAPTCHA.")
+
+# ---------------------------------------------------------------- telegram updates
+st.subheader("📨 Telegram updates")
+with ctx.session_factory() as s:
+    dg_on = digest.digest_enabled(s, cfg)
+    wk_on = digest.weekly_enabled(s, cfg)
+if not ctx.notifier.configured:
+    st.warning("Telegram is not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in `.env` and restart.")
+t1, t2 = st.columns(2)
+new_dg = t1.toggle("Price update after every search", value=dg_on,
+                   help="The current best price for every watched trip, even when it is not a deal.")
+rep = cfg.reports
+new_wk = t2.toggle(f"Weekly report ({digest.WEEKDAYS[rep.weekly_day]} {rep.weekly_hour:02d}:00)", value=wk_on,
+                   help="Lowest price per trip over the last week, and the best pick. If the computer is off "
+                        "at that time, it is sent at the next check. Change the day/hour in config.yaml → reports.")
+if (new_dg, new_wk) != (dg_on, wk_on):
+    with ctx.session_factory() as s:
+        settings_service.set_setting(s, digest.DIGEST_ENABLED, new_dg)
+        settings_service.set_setting(s, digest.WEEKLY_ENABLED, new_wk)
+    st.rerun()
+u1, u2, _ = st.columns([1, 1, 2])
+for col, label, build in ((u1, "Send price update now", digest.digest_blocks),
+                          (u2, "Send weekly report now", digest.weekly_blocks)):
+    if col.button(label, disabled=not ctx.notifier.configured):
+        with ctx.session_factory() as s:
+            r = digest.send_blocks(ctx.notifier, build(s, cfg))
+        (st.success if r.status == "sent" else st.error)(f"Telegram: {r.status} {r.error or ''}")
+with st.expander("Preview the price update"):
+    with ctx.session_factory() as s:
+        st.html("<br>".join(b.replace("\n", "<br>") for b in digest.digest_blocks(s, cfg)))
 
 rolling = [c for c in all_configs if c.enabled and not trip_service.is_trip_config(c)]
 if rolling:
