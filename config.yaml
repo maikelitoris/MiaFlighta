@@ -21,12 +21,21 @@ airports:
   - {iata: KRK, name: "John Paul II International Airport Kraków-Balice", city: Kraków, country: Poland, timezone: Europe/Warsaw}
   - {iata: KTW, name: "Katowice Wojciech Korfanty Airport", city: Katowice, country: Poland, timezone: Europe/Warsaw}
 
-# Every origin x destination x trip type becomes one search configuration.
+# Specific trips to watch: exact outbound and return dates. Each trip is searched
+# from every origin to every destination below (or its own lists). Add more in the
+# dashboard ("Trips" page) — this list only seeds a NEW database
+# (or run `python main.py init --sync-routes` to add newly listed ones).
+trips:
+  - {outbound: 2027-01-29, back: 2027-02-01}   # Fri 29 Jan -> Mon 1 Feb 2027
+
+# Defaults for trips and rolling routes. Every origin x destination x trip type
+# becomes one rolling search configuration if seed_rolling_routes is true.
 routes:
-  origins: [OPO, LIS, FAO]
+  seed_rolling_routes: false # true = also watch "the next N days" (lots more requests)
+  origins: [OPO, LIS]        # FAO left out on purpose (too far)
   destinations: [KRK, KTW]
   trip_types: [return, one_way]
-  days_ahead_min: 1          # search departures from tomorrow...
+  days_ahead_min: 1          # rolling routes: search departures from tomorrow...
   days_ahead_max: 60         # ...up to 60 days ahead
   min_stay_days: 3           # return trips only
   max_stay_days: 10
@@ -34,7 +43,7 @@ routes:
   return_weekdays: []        # e.g. departure [4, 5] + return [6, 0] = weekend trips
   passengers: 1
   max_price: null            # null = use default_max_price
-  frequency_hours: 6
+  frequency_hours: 12        # search every 12 hours
 
 # Katowice is an ALTERNATIVE destination, not equivalent to Kraków.
 # The ground cost of getting from the airport to Kraków is added (per direction,

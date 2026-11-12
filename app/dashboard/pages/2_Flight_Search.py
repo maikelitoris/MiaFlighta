@@ -26,11 +26,15 @@ sel_origins = col1.multiselect("Departure airport", origins, default=origins, fo
 sel_dests = col2.multiselect("Destination airport", dests, default=dests, format_func=fmt)
 trip = col3.radio("Trip type", ["return", "one_way", "both"], horizontal=True,
                   format_func=lambda t: {"one_way": "one-way"}.get(t, t))
-col4, col5, col6 = st.columns(3)
-dates = col4.date_input("Departure between", (date.today(), date.today() + timedelta(days=60)))
-max_price = col5.number_input(f"Max price ({ctx.config.currency}, total)", min_value=0.0, value=0.0, step=10.0,
+d1, d2, d3 = st.columns(3)
+dates = d1.date_input("Going between", (date.today(), date.today() + timedelta(days=90)), format="DD/MM/YYYY")
+ret_dates = d2.date_input("Coming back between", (date.today(), date.today() + timedelta(days=120)),
+                          format="DD/MM/YYYY", help="Return trips only", disabled=trip == "one_way")
+nights = d3.slider("Nights away", 0, 30, (0, 30), help="Return trips only", disabled=trip == "one_way")
+col4, col5 = st.columns(2)
+max_price = col4.number_input(f"Max price ({ctx.config.currency}, total)", min_value=0.0, value=0.0, step=10.0,
                               help="0 = no limit")
-stops = col6.radio("Stops", ["any", "direct only", "connecting only"], horizontal=True)
+stops = col5.radio("Stops", ["any", "direct only", "connecting only"], horizontal=True)
 col7, col8 = st.columns(2)
 sel_airlines = col7.multiselect("Airline", airlines, format_func=airline_name, help="Empty = all")
 recent_only = col8.checkbox(f"Only offers seen in the last {ctx.config.dashboard.current_offer_hours:.0f}h", value=True)
@@ -52,6 +56,17 @@ with ctx.session_factory() as s:
     if recent_only:
         q = q.where(FlightOffer.collected_at >= utcnow() - timedelta(hours=ctx.config.dashboard.current_offer_hours))
     offers = list(s.scalars(q.order_by(FlightOffer.price).limit(1000)))
+    if trip != "one_way":
+        def _return_ok(o) -> bool:
+            if o.trip_type != "return":
+                return True
+            if o.return_departure_at is None:
+                return False
+            r = o.return_departure_at.date()
+            if isinstance(ret_dates, (tuple, list)) and len(ret_dates) == 2 and not (ret_dates[0] <= r <= ret_dates[1]):
+                return False
+            return nights[0] <= (r - o.departure_at.date()).days <= nights[1]
+        offers = [o for o in offers if _return_ok(o)]
     if stops == "direct only":
         offers = [o for o in offers if o.is_direct]
     elif stops == "connecting only":

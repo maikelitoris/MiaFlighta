@@ -1,8 +1,8 @@
 # ✈️ Flight Radar
 
-Flight Radar is a personal flight price monitor for **Portugal (OPO, LIS, FAO) → Kraków (KRK) / Katowice (KTW)**. It:
+Flight Radar is a personal flight price monitor for **Portugal (Porto OPO, Lisbon LIS) → Kraków (KRK) / Katowice (KTW)**. It:
 
-* searches automatically every 6 hours;
+* watches the exact trips you pick (for example *Fri 29 Jan → Mon 1 Feb*) and searches them automatically every 12 hours;
 * stores every price it observes in a local SQLite database;
 * scores deals with configurable rules;
 * sends Telegram alerts for good and excellent deals;
@@ -79,7 +79,13 @@ Run the dashboard in a second terminal next to `run`. To start it automatically 
 ### Dashboard pages
 
 * **Overview**: cheapest offers, best deals, a *Run search now* button, provider health, latest runs.
-* **Flight Search**: filter stored offers by airport, dates, price, airline and stops.
+* **Trips**: the easy way to choose dates.
+  * Pick a **going** and a **coming back** date, or a quick pattern (*Fri → Sun*, *Fri → Mon*, *Thu → Mon*…).
+  * **Repeat weekly** adds the same weekdays for the following weeks in one click.
+  * Choose the airports on each side and an optional max price.
+  * Each watched trip shows the best price seen, a booking link, a *Watch* on/off switch and *Remove*.
+  * *Schedule and request limits* sets how often trips are searched and shows how many requests each run will make against each provider's cap. It warns before you add more dates than one run can cover.
+* **Flight Search**: filter stored offers by airport, going dates, coming-back dates, nights away, price, airline and stops.
 * **Price History**: daily lowest, average and median prices, cheapest price by departure date, and price changes per itinerary.
 * **Settings**: budget, frequency, Telegram on/off, providers (including resuming a paused provider), routes (edit, add, remove, date ranges, weekdays, stay length), and airports.
 
@@ -89,6 +95,8 @@ The dashboard shows only data that was actually collected. It never shows sample
 
 [`config.yaml`](config.yaml) holds the defaults. They are copied into the database on first `init`; after that, change things in the dashboard or with `/budget`.
 
+* **Trips**: `trips:` lists exact date pairs to watch, e.g. `{outbound: 2027-01-29, back: 2027-02-01}`. Each is searched from every `routes.origins` airport to every `routes.destinations` airport (or the trip's own `origins`/`destinations`). Past trips are skipped. Usually you add trips on the dashboard's Trips page instead.
+* **Rolling routes**: `routes.seed_rolling_routes: true` also creates "the next N days" searches. It is off by default, because watching every day costs many more requests than watching a few trips.
 * **Routes**: origins × destinations × trip types, plus days ahead (1–60), stay length (3–10 days), weekdays (for example Fri/Sat out, Sun/Mon back), passengers, budget and frequency. After adding routes to the YAML, run `python main.py init --sync-routes`.
 * **Katowice**: `transfer_costs.KTW` (default €15 per direction, an estimate you should adjust). It is added to KTW offers when scoring and checking the budget, because Katowice is an *alternative*, not the same as Kraków.
 * **Deal scoring**: `scoring` (defaults below). Price thresholds apply to the effective price **per passenger**. Return trips are judged on the **total return price**, with their own thresholds.
@@ -114,6 +122,15 @@ How alerts avoid repeats:
 * An offer is alerted once.
 * It is alerted again only if it gets at least 5% cheaper or its category improves.
 * Failed sends are retried on the next run.
+
+### Request limits
+
+| Provider | Official limit | What the app does | Your trips |
+|---|---|---|---|
+| Ryanair fare finder | None published. The endpoints are undocumented and Ryanair can change them or start blocking at any time. Personal, non-commercial use only | One request every 3 s and at most 80 requests per run. Stops and pauses Ryanair for 24 h at the first CAPTCHA, challenge or 403, without trying to get around it | One request covers a whole month of fares in one direction. Trips in the same months share requests: 1 trip ≈ 9 requests, 4 trips in Jan–Feb ≈ 13 requests per run (~26 a day at 12 h) |
+| Travelpayouts | About 600 requests/min | At most 100 requests per run, cached for 60 min | 1 request per airport pair and month. Skipped when no token is set |
+
+When one run would need more requests than a cap allows, the remaining searches in that run are skipped and logged. The Trips page shows the estimate before you add dates.
 
 ## 4. How it works
 

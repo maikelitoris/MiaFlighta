@@ -19,7 +19,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 @pytest.fixture
 def config(tmp_path) -> AppConfig:
     cfg = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
-    cfg = cfg.model_copy(update={"database_path": str(tmp_path / "test.db")})
+    # Tests use the generic rolling routes (OPO/LIS/FAO x KRK/KTW) and no seeded trips,
+    # independent of what the user's config.yaml currently watches.
+    routes = cfg.routes.model_copy(update={"seed_rolling_routes": True, "origins": ["OPO", "LIS", "FAO"]})
+    cfg = cfg.model_copy(update={"database_path": str(tmp_path / "test.db"), "routes": routes, "trips": []})
     cfg.secrets.travelpayouts_token = "TEST-TOKEN"
     cfg.secrets.telegram_bot_token = None
     cfg.secrets.telegram_chat_id = None
