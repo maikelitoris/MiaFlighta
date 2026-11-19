@@ -8,8 +8,8 @@ No paid service, subscription, proxy, server or AI API is used.
 | Python, SQLAlchemy, Pydantic, httpx, APScheduler, Streamlit, pandas, pytest, python-dotenv, PyYAML, tzdata | Free, open source | No | — | No |
 | python-telegram-bot + Telegram Bot API | Free | Telegram account, then create a bot with @BotFather | About 30 messages/sec. We send a handful per day | No |
 | SQLite database (`data/flight_radar.db`) | Free, local file | No | — | No |
-| Ryanair fare finder (personal use) | Free | No | We self-limit to 1 request every 3 s, about 30 per run | No |
-| Travelpayouts / Aviasales Data API | Free | Travelpayouts account, then copy the API token | About 600 requests/min. We use about 30 requests every 6 hours | Not for the Data API |
+| Ryanair fare finder (personal use) | Free | No | No published quota. We self-limit to 1 request every 3 s and at most 80 per run; one weekend trip from OPO+LIS is about 9 requests every 12 h | No |
+| Travelpayouts / Aviasales Data API | Free | Travelpayouts account, then copy the API token | About 600 requests/min. We use 1 request per airport pair and month, every 12 hours (only with a token) | Not for the Data API |
 | Your computer (runs scheduler + dashboard) | Electricity only | — | Must stay on and running | — |
 | Docker (optional) | Free | No | — | Docker Desktop is free for personal use |
 
@@ -36,5 +36,6 @@ Prices and an estimate of what each would cost for our search volume are in [doc
 | SerpApi (Google Flights) | Google Flights coverage | Free tier is too small (100–250/month). From about $25/month | — |
 | Duffel live mode | Bookable NDC/GDS fares | Pay per order, plus fees when searches far exceed bookings | Duffel test mode is free but returns **test data only**, so it is useless for real prices |
 | Cloud server / VPS | Searches while your PC is off | About €4–6/month | Keep your PC on, or run it on an old laptop or Raspberry Pi you already own |
+| GitHub Actions (optional cloud job, every 12 h) | Free | GitHub account (you already have one) | Public repos: unlimited minutes. Private repos: 2,000 free minutes/month; this job uses ~90 | Only if you choose a paid plan or exceed the free minutes in a private repo. GitHub stops the job rather than charging when no payment method is set |
 
 The app never subscribes to anything and never makes paid API calls. Every provider in the code is free.

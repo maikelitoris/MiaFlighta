@@ -39,7 +39,7 @@ from app.core.errors import ProviderError, ProviderRequestError
 from app.core.http import PoliteHttpClient, ResponseCache
 from app.core.timeutils import month_starts
 from app.models.schemas import FlightOfferData, PriceType, SearchQuery, TripType
-from app.providers.base import FlightProvider, HealthResult, ProviderResult
+from app.providers.base import DailyFareData, FlightProvider, HealthResult, ProviderResult
 
 log = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ class RyanairProvider(FlightProvider):
         before = self.http.requests_made
         month = query.departure_month or query.departure_date.replace(day=1)
         out_fares, out_cached = self._fares_for_month(query.origin, query.destination, month, query.currency)
+        seen: dict[tuple[str, str], dict[date, Fare]] = {(query.origin, query.destination): dict(out_fares)}
         if query.departure_date:
             out_fares = {d: f for d, f in out_fares.items() if d == query.departure_date}
         collected = datetime.now(timezone.utc)
@@ -172,6 +173,7 @@ class RyanairProvider(FlightProvider):
                 for m in month_starts(first, last):
                     fares, cached = self._fares_for_month(query.destination, query.origin, m, query.currency)
                     in_fares.update(fares)
+                    seen.setdefault((query.destination, query.origin), {}).update(fares)
                     all_cached = all_cached and cached
                 result.from_cache = all_cached
                 weekdays = set(query.return_weekdays)
@@ -187,6 +189,10 @@ class RyanairProvider(FlightProvider):
                         best = min(options, key=lambda f: (f.price, f.day))
                         result.offers.append(self._offer(query, out, best, collected))
         result.requests_made = self.http.requests_made - before
+        result.daily_fares = [
+            DailyFareData(self.name, o, d, f.day, f.price, f.currency, f.departure, f.arrival, f.flight_number)
+            for (o, d), fares in seen.items() for f in sorted(fares.values(), key=lambda f: f.day)
+        ]
         return result
 
     def health_check(self) -> HealthResult:

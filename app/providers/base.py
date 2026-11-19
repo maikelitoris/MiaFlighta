@@ -4,9 +4,27 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import ClassVar
 
 from app.models.schemas import FlightOfferData, PriceType, SearchQuery
+
+
+@dataclass(frozen=True)
+class DailyFareData:
+    """Cheapest one-way fare on one day, one direction (e.g. from a fare calendar).
+    Used to show the going/coming-back legs of a return trip and to compare a trip
+    with other dates. Times are local wall-clock times at the departure airport."""
+
+    provider: str
+    origin: str
+    destination: str
+    day: date
+    price: float  # one adult
+    currency: str
+    departure_at: datetime | None = None
+    arrival_at: datetime | None = None
+    flight_number: str | None = None
 
 
 @dataclass
@@ -16,6 +34,8 @@ class ProviderResult:
     requests_made: int = 0
     skipped_items: int = 0  # raw results that could not be normalized
     warnings: list[str] = field(default_factory=list)
+    # Optional: every daily fare the provider saw while answering (both directions).
+    daily_fares: list[DailyFareData] = field(default_factory=list)
 
 
 @dataclass

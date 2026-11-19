@@ -19,7 +19,8 @@ from app.models.db_models import FlightOffer  # noqa: E402
 from app.services.deal_engine import DealAssessment  # noqa: E402
 
 DISCLAIMER = (
-    "Prices come from the enabled providers only (currently cached Aviasales data via Travelpayouts). "
+    "Prices come from the enabled providers only (Ryanair's own fare finder and/or cached Aviasales data via "
+    "Travelpayouts). "
     "They are **indicative** and may have changed — always verify on the booking site. "
     "Not all airlines are covered."
 )

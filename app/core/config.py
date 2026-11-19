@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
-from datetime import time
+from datetime import date, time
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,9 +31,12 @@ class AirportConfig(BaseModel):
 
 
 class RoutesConfig(BaseModel):
+    # False = don't create the rolling "next N days" routes on first start
+    # (useful when you only want to watch specific trips, see `trips`).
+    seed_rolling_routes: bool = True
     origins: list[str] = ["OPO", "LIS", "FAO"]
     destinations: list[str] = ["KRK", "KTW"]
-    trip_types: list[Literal["one_way", "return"]] = ["return", "one_way"]
+    trip_types: list[Literal["one_way", "return"]] = ["return"]
     days_ahead_min: int = Field(1, ge=0)
     days_ahead_max: int = Field(60, ge=1, le=365)
     min_stay_days: int | None = 3
@@ -43,6 +46,22 @@ class RoutesConfig(BaseModel):
     passengers: int = Field(1, ge=1, le=9)
     max_price: float | None = None
     frequency_hours: float = Field(6, gt=0)
+
+
+class TripConfig(BaseModel):
+    """One specific out/back date pair to watch, e.g. Fri 29 Jan -> Mon 1 Feb."""
+
+    outbound: date
+    back: date
+    origins: list[str] | None = None  # None = routes.origins
+    destinations: list[str] | None = None  # None = routes.destinations
+    max_price: float | None = None
+
+    @model_validator(mode="after")
+    def _order(self) -> "TripConfig":
+        if self.back < self.outbound:
+            raise ValueError(f"trip {self.outbound}: return date is before the outbound date")
+        return self
 
 
 class TransferCost(BaseModel):
@@ -94,6 +113,14 @@ class AlertsConfig(BaseModel):
     max_alerts_per_run: int = 10
 
 
+class ReportsConfig(BaseModel):
+    digest_every_run: bool = True  # Telegram price update after every scheduled search
+    weekly_report: bool = True
+    weekly_day: int = Field(6, ge=0, le=6)  # 0=Mon ... 6=Sun
+    weekly_hour: int = Field(19, ge=0, le=23)  # local time of this computer
+    report_days: int = Field(7, ge=1, le=60)
+
+
 class SchedulerConfig(BaseModel):
     tick_minutes: float = 30
     blocked_pause_hours: float = 24
@@ -114,10 +141,12 @@ class AppConfig(BaseModel):
     default_max_price: float = 150
     airports: list[AirportConfig] = []
     routes: RoutesConfig = RoutesConfig()
+    trips: list[TripConfig] = []
     transfer_costs: dict[str, TransferCost] = {}
     providers: dict[str, ProviderConfig] = {"travelpayouts": ProviderConfig()}
     scoring: ScoringConfig = ScoringConfig()
     alerts: AlertsConfig = AlertsConfig()
+    reports: ReportsConfig = ReportsConfig()
     scheduler: SchedulerConfig = SchedulerConfig()
     dashboard: DashboardConfig = DashboardConfig()
     database_path: str = "data/flight_radar.db"

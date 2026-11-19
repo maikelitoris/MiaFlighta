@@ -20,6 +20,7 @@ from app.models.db_models import (
 )
 from app.notifications.telegram import money, stops_text
 from app.services import settings_service
+from app.services.trips import is_trip_config, trip_dates
 from app.services.deal_engine import DealAssessment, assess_offer
 
 
@@ -107,10 +108,18 @@ def routes_text(session: Session, config: AppConfig) -> str:
     lines = ["<b>Routes</b>"]
     for c in cfgs:
         price = money(c.max_price, config.currency) if c.max_price else f"global {money(budget, config.currency)}"
-        stay = f", stay {c.min_stay_days}-{c.max_stay_days}d" if c.trip_type == "return" else ""
+        if is_trip_config(c):
+            out, back = trip_dates(c)
+            when = f"{out:%a %d %b %Y} → {back:%a %d %b %Y}"
+        elif c.date_from or c.date_to:
+            stay = f", stay {c.min_stay_days}-{c.max_stay_days}d" if c.trip_type == "return" else ""
+            when = f"departing {c.date_from or '…'} to {c.date_to or '…'}{stay}"
+        else:
+            stay = f", stay {c.min_stay_days}-{c.max_stay_days}d" if c.trip_type == "return" else ""
+            when = f"{c.days_ahead_min}-{c.days_ahead_max} days ahead{stay}"
         lines.append(
             f"#{c.id} {c.label}{' [off]' if not c.enabled else ''}: "
-            f"{c.days_ahead_min}-{c.days_ahead_max} days ahead{stay}, max {price}, every {c.frequency_hours:g}h, "
+            f"{when}, max {price}, every {c.frequency_hours:g}h, "
             f"last run {fmt_time(c.last_run_at)}"
         )
     return "\n".join(lines)

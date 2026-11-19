@@ -18,7 +18,7 @@ from app.core.errors import (
     ProviderNotConfiguredError,
 )
 from app.core.timeutils import utcnow
-from app.models.db_models import SearchConfiguration, SearchRun
+from app.models.db_models import DailyFare, SearchConfiguration, SearchRun
 from app.notifications.telegram import Notifier
 from app.providers.base import FlightProvider
 from app.services import provider_health, settings_service
@@ -108,6 +108,7 @@ class SearchService:
                 return summary
 
             budgets = {name: self.config.provider(name).max_requests_per_run for name in self.providers}
+            self._fares_saved: set[tuple] = set()  # daily fares already stored in this run
             for cfg in configs:
                 any_success = False
                 for name, provider in self.providers.items():
@@ -129,6 +130,20 @@ class SearchService:
                 summary.errors.append(f"alerts: {exc}")
         log.info("Search finished (%s): %s", trigger, summary.text())
         return summary
+
+    def _save_daily_fares(self, session: Session, fares: list, run_id: int) -> None:
+        """Append fare-calendar observations (once per day/direction per run)."""
+        now = utcnow()
+        for f in fares:
+            key = (f.provider, f.origin, f.destination, f.day)
+            if key in self._fares_saved:
+                continue
+            self._fares_saved.add(key)
+            session.add(DailyFare(provider=f.provider, origin=f.origin, destination=f.destination, day=f.day,
+                                  price=f.price, currency=f.currency, departure_at=f.departure_at,
+                                  arrival_at=f.arrival_at, flight_number=f.flight_number, observed_at=now,
+                                  search_run_id=run_id))
+        session.commit()
 
     def _run_provider(
         self,
@@ -174,6 +189,7 @@ class SearchService:
                 run.new_offers += saved.new
                 if not result.from_cache:
                     seen_offer_ids.extend(saved.offer_ids)
+                    self._save_daily_fares(session, result.daily_fares, run.id)
             run.status = "success"
             provider_health.record_success(session, name)
             return True
