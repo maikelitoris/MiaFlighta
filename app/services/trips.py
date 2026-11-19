@@ -218,6 +218,29 @@ def cheapest_offers(session: Session, trip: Trip) -> list[FlightOffer]:
             if o.return_departure_at is not None and o.return_departure_at.date() == trip.back]
 
 
+def sync_trips_from_config(session: Session, config: AppConfig, today: date | None = None) -> tuple[int, int]:
+    """Makes the watched trips match config.yaml exactly (used by the cloud job, where
+    config.yaml is the only way to add or remove dates). Adds or re-enables listed
+    trips and switches off trips that are no longer listed. Returns (added, disabled).
+    Past trips in the file are ignored; collected prices are never deleted."""
+    today = today or date.today()
+    wanted: set[tuple[date, date]] = set()
+    added = 0
+    for t in config.trips:
+        if t.outbound < today:
+            continue
+        wanted.add((t.outbound, t.back))
+        added += add_trip(session, config, t.outbound, t.back,
+                          t.origins or config.routes.origins, t.destinations or config.routes.destinations,
+                          max_price=t.max_price, today=today)
+    disabled = 0
+    for trip in list_trips(session):
+        if (trip.outbound, trip.back) not in wanted and trip.enabled:
+            set_trip_enabled(session, trip, False)
+            disabled += 1
+    return added, disabled
+
+
 def disable_rolling_routes(session: Session) -> int:
     """Turns off every non-trip configuration (rolling 30-60 day windows)."""
     n = 0

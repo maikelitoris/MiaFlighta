@@ -7,6 +7,7 @@
     python main.py status            print status
     python main.py check             check provider credentials / connectivity
     python main.py telegram-test     send a test Telegram message
+    python main.py cloud-run         one search + Telegram cycle, then exit (GitHub Actions)
 """
 
 from __future__ import annotations
@@ -121,6 +122,35 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_cloud_run(args) -> int:
+    """One complete cycle for a scheduled cloud job (GitHub Actions): watch exactly the
+    trips in config.yaml, search them, send the Telegram update (and the weekly report
+    when due), then exit. Rolling routes are switched off: only the listed trips run."""
+    from app.context import build_context
+    from app.scheduler.scheduler import scheduled_tick
+    from app.services import trips
+
+    ctx = build_context()
+    with ctx.session_factory() as s:
+        trips.disable_rolling_routes(s)
+        added, disabled = trips.sync_trips_from_config(s, ctx.config)
+        watched = [t for t in trips.list_trips(s) if t.enabled]
+    print(f"Trips from config.yaml: {len(watched)} watched ({added} route searches added, {disabled} trips switched off)")
+    if not ctx.notifier.configured:
+        print("WARNING: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set: no Telegram messages will be sent.")
+    summary = scheduled_tick(ctx.search_service, force=True)
+    if summary is None:
+        print("Search crashed — see the log above.")
+        return 1
+    print(summary.text())
+    for e in summary.errors:
+        print(" -", e)
+    # Fail the job (GitHub then e-mails you) on real provider errors such as a Ryanair
+    # block. A missing optional token (Travelpayouts) is not a failure.
+    hard = [e for e in summary.errors if "not configured" not in e]
+    return 1 if hard else 0
+
+
 def cmd_dashboard(args) -> int:
     env = os.environ | {"PYTHONPATH": str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")}
     script = ROOT / "app" / "dashboard" / "Overview.py"
@@ -144,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run", help="run scheduler + Telegram bot")
     p.add_argument("--no-bot", action="store_true", help="scheduler only, no Telegram commands")
     p.set_defaults(func=cmd_run)
+    sub.add_parser("cloud-run", help="one search + Telegram cycle for a scheduled cloud job, then exit"
+                   ).set_defaults(func=cmd_cloud_run)
     p = sub.add_parser("dashboard", help="start the Streamlit dashboard")
     p.add_argument("--port", type=int, default=8501)
     p.set_defaults(func=cmd_dashboard)

@@ -36,5 +36,6 @@ Prices and an estimate of what each would cost for our search volume are in [doc
 | SerpApi (Google Flights) | Google Flights coverage | Free tier is too small (100–250/month). From about $25/month | — |
 | Duffel live mode | Bookable NDC/GDS fares | Pay per order, plus fees when searches far exceed bookings | Duffel test mode is free but returns **test data only**, so it is useless for real prices |
 | Cloud server / VPS | Searches while your PC is off | About €4–6/month | Keep your PC on, or run it on an old laptop or Raspberry Pi you already own |
+| GitHub Actions (optional cloud job, every 12 h) | Free | GitHub account (you already have one) | Public repos: unlimited minutes. Private repos: 2,000 free minutes/month; this job uses ~90 | Only if you choose a paid plan or exceed the free minutes in a private repo. GitHub stops the job rather than charging when no payment method is set |
 
 The app never subscribes to anything and never makes paid API calls. Every provider in the code is free.

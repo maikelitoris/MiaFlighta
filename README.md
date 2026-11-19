@@ -65,7 +65,43 @@ python main.py run         # automatic mode: scheduler + Telegram bot (leave it 
 
 Run the dashboard in a second terminal next to `run`.
 
-### Keep it running all the time
+### Run it in the cloud (no PC needed, free)
+
+GitHub Actions can run Flight Radar on GitHub's servers every 12 hours, with your computer off. For a public repository it costs nothing. A private one gets 2,000 free minutes a month, and each run takes about 1–2 minutes (roughly 90 minutes a month).
+
+1. **Merge the pull request** that adds `.github/workflows/flight-radar.yml` into the repository's default branch. GitHub only runs scheduled jobs from the default branch.
+2. **Add the secrets**: on GitHub, go to **Settings → Secrets and variables → Actions → New repository secret**:
+   * `TELEGRAM_BOT_TOKEN`
+   * `TELEGRAM_CHAT_ID`
+   * `TRAVELPAYOUTS_TOKEN` (optional)
+
+   Secrets are encrypted and never shown in logs, even in a public repository.
+3. **Start it**: go to **Actions → Flight Radar → Run workflow**. This also works in the GitHub mobile app. From then on it runs at about 07:17 and 19:17 Portuguese time.
+
+What happens in each run:
+
+* It searches the trips listed under `trips:` in [`config.yaml`](config.yaml). **To add or remove dates, edit that file on GitHub** (the pencil icon, from your phone too); the next run picks it up. Trips you remove are switched off, and their prices are kept.
+* It sends the Telegram price update, and the weekly report on Sunday evenings.
+* It saves the price history (the SQLite database) on the `flight-data` branch. That branch holds one commit that is replaced every time, so the repository doesn't grow.
+* If a search fails (for example, Ryanair blocks GitHub's servers), you get a Telegram message with a link to the log, and GitHub e-mails you.
+
+Limits to know:
+
+* **GitHub may start a scheduled run late**, often by a few minutes and sometimes by up to an hour at busy times.
+* **Ryanair might block GitHub's datacenter addresses.** That can't be tested from outside GitHub. If it happens, the app stops for 24 hours without trying to get around the block, and tells you on Telegram. Running on your PC is then the fallback.
+* **Telegram commands (`/trips`, `/budget`…) only work while `python main.py run` is running somewhere.** The cloud job only sends messages and doesn't answer commands.
+* **Your dashboard shows your local database.** To see the cloud's price history on your PC:
+
+  ```bash
+  git fetch origin flight-data && git show origin/flight-data:flight_radar.db > data/flight_radar.db
+  ```
+
+* **In a public repository, the `flight-data` branch is public**: anyone can see the watched dates and prices, but not your Telegram details. To keep them private, make the repository private (Settings → General → Danger Zone); it still fits easily in the free minutes.
+* GitHub pauses scheduled jobs in a repository with no activity for 60 days. The job's own pushes to `flight-data` should count as activity. If it ever stops, the Actions tab shows a button to re-enable it.
+
+Don't run the cloud job and `python main.py run` on your PC at the same time, or you'll get every Telegram message twice.
+
+### Keep it running on your PC instead
 
 `python scripts/keep_running.py` runs `main.py run` and restarts it whenever it stops (a crash, or no internet at startup). It waits longer between restarts if the app keeps failing straight away.
 

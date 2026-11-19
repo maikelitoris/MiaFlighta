@@ -1,0 +1,87 @@
+# Flight Radar in the cloud, for free: GitHub runs this job on its own servers every
+# 12 hours, so nothing depends on your computer being on.
+#
+# Setup (once): Settings > Secrets and variables > Actions > New repository secret:
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID   (required for messages)
+#   TRAVELPAYOUTS_TOKEN                    (optional)
+# Watched dates come from `trips:` in config.yaml: edit that file on GitHub to add
+# or remove dates. Run it now: Actions > Flight Radar > Run workflow.
+#
+# Price history (the SQLite database) is kept between runs on the `flight-data`
+# branch, overwritten with a single commit each time so the repository stays small.
+# Scheduled workflows only run from the repository's default branch.
+
+name: Flight Radar
+
+on:
+  schedule:
+    - cron: "17 6,18 * * *"   # 06:17 and 18:17 UTC (07:17 / 19:17 in Portugal in winter)
+  workflow_dispatch:           # "Run workflow" button, also in the GitHub mobile app
+
+permissions:
+  contents: write              # to save the price history on the flight-data branch
+
+concurrency:
+  group: flight-radar          # never two runs at once (they would overwrite each other's data)
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Europe/Lisbon        # weekly report time and message dates in Portuguese local time
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-cloud.txt
+
+      - name: Install
+        run: pip install -r requirements-cloud.txt
+
+      - name: Restore price history
+        run: |
+          mkdir -p data
+          if git fetch --depth=1 origin flight-data 2>/dev/null; then
+            git show FETCH_HEAD:flight_radar.db > data/flight_radar.db
+            echo "Restored $(du -h data/flight_radar.db | cut -f1) of price history"
+          else
+            echo "No saved price history yet: this is the first run."
+          fi
+
+      - name: Search and send Telegram update
+        id: run
+        continue-on-error: true   # still save whatever was collected
+        run: python main.py cloud-run
+
+      - name: Save price history
+        if: always()
+        run: |
+          [ -f data/flight_radar.db ] || exit 0
+          python -c "import sqlite3; c = sqlite3.connect('data/flight_radar.db'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()"
+          store="$RUNNER_TEMP/flight-data"
+          mkdir -p "$store" && cp data/flight_radar.db "$store/" && cd "$store"
+          printf '%s\n' "# Flight Radar data" "" \
+            "Price history saved by the Flight Radar GitHub Action. Overwritten on every run." \
+            "Open it locally: git fetch origin flight-data && git show origin/flight-data:flight_radar.db > data/flight_radar.db" > README.md
+          git init -q -b flight-data
+          git add flight_radar.db README.md
+          git -c user.name="flight-radar-bot" -c user.email="actions@users.noreply.github.com" \
+            commit -q -m "Price data $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" flight-data
+          echo "Saved price history to the flight-data branch"
+
+      - name: Tell Telegram about a problem
+        if: steps.run.outcome == 'failure'
+        run: python scripts/notify_failure.py
+
+      - name: Mark the run as failed
+        if: steps.run.outcome == 'failure'
+        run: exit 1

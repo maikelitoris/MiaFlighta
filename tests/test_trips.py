@@ -165,3 +165,18 @@ def test_trip_search_end_to_end_with_mocked_ryanair(config, session_factory, ses
     # only Fri 29 Jan -> Mon 1 Feb, never the cheaper TEST fares on other days
     assert [(o.origin, round(o.price, 2)) for o in offers] == [("OPO", 123.28), ("LIS", 126.98)]
     assert summary.requests_made == 5  # warm-up + 2 outbound + 2 inbound months (sparse TEST calendars)
+
+
+def test_sync_trips_from_config_adds_and_switches_off(config, session):
+    clear_routes(session)
+    ts.add_trip(session, config, date(2027, 2, 5), date(2027, 2, 8), ["OPO"], ["KRK"], today=TODAY)  # not in file
+    cfg = config.model_copy(update={"trips": [
+        TripConfig(outbound=OUT, back=BACK, origins=["OPO", "LIS"], destinations=["KRK"]),
+        TripConfig(outbound=date(2027, 1, 1), back=date(2027, 1, 4)),  # past: ignored
+    ]})
+    added, disabled = ts.sync_trips_from_config(session, cfg, today=TODAY)
+    assert (added, disabled) == (2, 1)
+    trips = {(t.outbound, t.back): t for t in ts.list_trips(session)}
+    assert trips[(OUT, BACK)].enabled and not trips[(date(2027, 2, 5), date(2027, 2, 8))].enabled
+    # running again changes nothing (idempotent, safe every 12 h)
+    assert ts.sync_trips_from_config(session, cfg, today=TODAY) == (0, 0)

@@ -148,3 +148,16 @@ def test_scheduled_tick_sends_digest_after_each_search(config, session_factory, 
     settings_service.set_setting(session, digest.DIGEST_ENABLED, False)
     scheduled_tick(svc)
     assert len(n.messages) == 1  # turned off: nothing more
+
+
+def test_cloud_tick_forces_search_and_returns_summary(config, session_factory, session):
+    setup_trip(config, session)
+    calls = {}
+
+    class Recording(OneRouteService):
+        def run(self, **kw):
+            calls.update(kw)
+            return super().run(**kw)
+
+    summary = scheduled_tick(Recording(config, session_factory, {}, FakeNotifier()), force=True)
+    assert calls["force"] is True and summary.configs_searched == 1
