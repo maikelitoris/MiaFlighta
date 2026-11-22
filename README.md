@@ -207,7 +207,10 @@ How it works:
 You get Telegram messages once a day:
 
 1. **Best picks**: the top 8 weekend + place combinations, with each person's price, airports, flight times and booking links. The first line is the summary, e.g. *"🌍 Best weekend: 5–8 Mar London · €110 together"*.
-2. **Weekend by weekend**: the two cheapest places for each weekend, split into several messages if the year doesn't fit in one. It ends with the notes on countries only one of you can reach.
+2. **Best weekend each month**: one line per month, February 2027 → January 2028, with the cheapest weekend and place, each person's price and the runner-up. This shows months that never make the overall top 8.
+3. **Weekend by weekend**: the two cheapest places for each weekend, split into several messages if the year doesn't fit in one. It ends with the notes on countries only one of you can reach.
+
+A manual **Actions → Flight Radar → Run workflow** always includes the weekend finder, even if it already ran that day.
 
 The dashboard's **Weekend Finder** page has every option, with filters and a chart.
 

@@ -138,7 +138,10 @@ def cmd_cloud_run(args) -> int:
     print(f"Trips from config.yaml: {len(watched)} watched ({added} route searches added, {disabled} trips switched off)")
     if not ctx.notifier.configured:
         print("WARNING: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set: no Telegram messages will be sent.")
-    summary = scheduled_tick(ctx.search_service, force=True)
+    # A manual "Run workflow" on GitHub sets FORCE_FINDER so the weekend finder runs
+    # now even if it already ran today (scheduled runs keep its once-a-day pace).
+    force_finder = os.environ.get("FORCE_FINDER", "").lower() in ("1", "true", "yes")
+    summary = scheduled_tick(ctx.search_service, force=True, force_finder=force_finder)
     if summary is None:
         print("Search crashed — see the log above.")
         return 1

@@ -59,6 +59,9 @@ jobs:
       - name: Search and send Telegram update
         id: run
         continue-on-error: true   # still save whatever was collected
+        env:
+          # manual runs ("Run workflow") always include the weekend finder
+          FORCE_FINDER: ${{ github.event_name == 'workflow_dispatch' }}
         run: python main.py cloud-run
 
       - name: Save price history

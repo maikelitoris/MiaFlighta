@@ -111,7 +111,9 @@ def test_messages_preview_and_overview(config, session):
     cfg = finder_config(config)
     p = provider(FakeFinder())
     wf.run_finder(session, cfg, p, today=TODAY)
-    top, overview = wf.finder_messages(session, cfg, p)
+    top, months, overview = wf.finder_messages(session, cfg, p)
+    assert "🗓️ Best weekend each month · Feb 2027 → Feb 2027" in months
+    assert "<b>Feb 2027</b>: Milan 5–8 Feb · <b>€104.00</b> (You €64.00 + Mia €40.00)" in months
     assert top.startswith("<b>🌍 Best weekend: 5–8 Feb Milan · €104.00 together</b>")
     assert "You €64.00 Porto→BGY" in top and "Mia €40.00 Kraków→BGY" in top
     assert "book</a>" in top and "Visiting each other" in top and "Mia → Porto: €65.00" in top
@@ -128,7 +130,7 @@ def test_new_low_is_flagged_against_earlier_runs(config, session):
     meetups, _ = wf.combine(session, cfg)
     bgy = next(m for m in meetups if m.destination == "Milan" and m.out_day == date(2027, 2, 5))
     assert bgy.previous_low == 144.0 and bgy.total == 104.0  # 4 legs x +10 before
-    top, _ = wf.finder_messages(session, cfg)
+    top = wf.finder_messages(session, cfg)[0]
     assert "🔻 new low (was €144.00)" in top
 
 
@@ -171,7 +173,7 @@ def test_scheduler_runs_finder_and_sends_two_messages(config, session_factory):
     n = FakeNotifier()
     svc = SearchService(cfg, session_factory, {"ryanair": provider(FakeFinder())}, n)
     r = run_weekend_finder(svc, force=True)
-    assert r.fares > 0 and len(n.messages) == 2 and "🌍" in n.messages[0]
+    assert r.fares > 0 and len(n.messages) == 3 and "🌍" in n.messages[0] and "🗓️" in n.messages[1]
     assert run_weekend_finder(svc) is None  # not due again right away
 
 
@@ -198,7 +200,7 @@ def test_country_filter_and_one_sided_note(config, session):
         meetups, _ = wf.combine(session, cfg)
         assert {m.country for m in meetups} <= {"United Kingdom", "Spain"}  # no Italy
         assert {m.destination for m in meetups} >= {"London", "AGP"}
-        top, overview = wf.finder_messages(session, cfg, p)
+        top, months, overview = wf.finder_messages(session, cfg, p)
         assert "No Ryanair flights from your airports:</b> Georgia" in overview
     finally:
         del PRICES["OPO"]["STN"]
@@ -223,7 +225,8 @@ def test_long_overview_is_split_into_telegram_sized_messages(config, session):
     wf.run_finder(session, cfg, p, today=TODAY)
     messages = wf.finder_messages(session, cfg, p)
     assert len(messages) >= 2 and all(len(m) <= 4096 for m in messages)
-    assert sum(m.count("<b>") for m in messages[1:]) >= 53  # every weekend listed
+    assert sum(m.count("<b>") for m in messages[2:]) >= 53  # every weekend listed
+    assert messages[1].count("<b>") >= 13  # one line per month (Feb 2027 ... Feb 2028) + title
 
 
 def test_slow_interval_wins_over_cloud_force(config, session_factory):
@@ -235,3 +238,14 @@ def test_slow_interval_wins_over_cloud_force(config, session_factory):
     svc = SearchService(cfg, session_factory, {"ryanair": provider(FakeFinder())}, FakeNotifier())
     assert run_weekend_finder(svc, force=True) is not None   # first run of the day
     assert run_weekend_finder(svc, force=True) is None       # 12 h later the cloud forces: still once a day
+
+
+def test_manual_run_ignores_once_a_day_interval(config, session_factory):
+    from app.scheduler.scheduler import run_weekend_finder
+    from app.services.search_service import SearchService
+    from tests.test_deals_and_alerts import FakeNotifier
+
+    cfg = finder_config(config, start=date.today() + timedelta(days=3), every_hours=20)
+    svc = SearchService(cfg, session_factory, {"ryanair": provider(FakeFinder())}, FakeNotifier())
+    assert run_weekend_finder(svc, force=True) is not None
+    assert run_weekend_finder(svc, force=True, ignore_interval=True) is not None  # "Run workflow" button
