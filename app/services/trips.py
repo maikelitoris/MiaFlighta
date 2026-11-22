@@ -54,6 +54,40 @@ class Trip:
                 f"{WEEKDAY_NAMES[self.back.weekday()]} {self.back:%d %b %Y} ({self.nights} nights)")
 
 
+TRAVELERS_SETTING = "trip_travelers"
+DEFAULT_TRAVELER = "You"
+
+
+def _traveler_key(outbound: date, back: date, origin: str) -> str:
+    return f"{outbound.isoformat()}|{back.isoformat()}|{origin.upper()}"
+
+
+def set_travelers(session: Session, outbound: date, back: date, origins: list[str], traveler: str | None) -> None:
+    """Remembers who flies from which origin on a trip (stored in app_settings)."""
+    from app.services import settings_service
+
+    mapping = dict(settings_service.get_setting(session, TRAVELERS_SETTING, {}))
+    for o in origins:
+        key = _traveler_key(outbound, back, o)
+        if traveler and traveler.strip() and traveler.strip() != DEFAULT_TRAVELER:
+            mapping[key] = traveler.strip()
+        else:
+            mapping.pop(key, None)
+    settings_service.set_setting(session, TRAVELERS_SETTING, mapping)
+
+
+def traveler_groups(session: Session, trip: "Trip") -> list[tuple[str, list[str]]]:
+    """[(traveller name, origins)] for a trip, "You" first. One group = one traveller."""
+    from app.services import settings_service
+
+    mapping = settings_service.get_setting(session, TRAVELERS_SETTING, {})
+    groups: dict[str, list[str]] = {}
+    for o in trip.origins:
+        name = mapping.get(_traveler_key(trip.outbound, trip.back, o), DEFAULT_TRAVELER)
+        groups.setdefault(name, []).append(o)
+    return sorted(groups.items(), key=lambda g: (g[0] != DEFAULT_TRAVELER, g[0]))
+
+
 def is_trip_config(c: SearchConfiguration) -> bool:
     return (
         c.trip_type == "return"
@@ -119,6 +153,7 @@ def add_trip(
     passengers: int | None = None,
     frequency_hours: float | None = None,
     today: date | None = None,
+    traveler: str | None = None,
 ) -> int:
     """Create the configurations for one trip. Returns how many were added
     (existing identical ones are re-enabled, not duplicated)."""
@@ -152,6 +187,7 @@ def add_trip(
                                         passengers=passengers, frequency_hours=frequency_hours))
             added += 1
     session.commit()
+    set_travelers(session, outbound, back, origins, traveler)
     return added
 
 
@@ -221,24 +257,30 @@ def cheapest_offers(session: Session, trip: Trip) -> list[FlightOffer]:
 def sync_trips_from_config(session: Session, config: AppConfig, today: date | None = None) -> tuple[int, int]:
     """Makes the watched trips match config.yaml exactly (used by the cloud job, where
     config.yaml is the only way to add or remove dates). Adds or re-enables listed
-    trips and switches off trips that are no longer listed. Returns (added, disabled).
-    Past trips in the file are ignored; collected prices are never deleted."""
+    airport pairs and switches off any trip pair no longer listed (e.g. one traveller
+    removed from a shared trip). Returns (added, trips switched off). Past trips in the
+    file are ignored; collected prices are never deleted."""
     today = today or date.today()
-    wanted: set[tuple[date, date]] = set()
+    wanted: set[tuple[date, date, str, str]] = set()
     added = 0
     for t in config.trips:
         if t.outbound < today:
             continue
-        wanted.add((t.outbound, t.back))
-        added += add_trip(session, config, t.outbound, t.back,
-                          t.origins or config.routes.origins, t.destinations or config.routes.destinations,
-                          max_price=t.max_price, today=today)
-    disabled = 0
-    for trip in list_trips(session):
-        if (trip.outbound, trip.back) not in wanted and trip.enabled:
-            set_trip_enabled(session, trip, False)
-            disabled += 1
-    return added, disabled
+        origins = [o.upper() for o in (t.origins or config.routes.origins)]
+        dests = [d.upper() for d in (t.destinations or config.routes.destinations)]
+        wanted |= {(t.outbound, t.back, o, d) for o in origins for d in dests}
+        added += add_trip(session, config, t.outbound, t.back, origins, dests,
+                          max_price=t.max_price, today=today, traveler=t.traveler)
+    switched_off: set[tuple[date, date]] = set()
+    for c in session.scalars(select(SearchConfiguration).where(SearchConfiguration.enabled.is_(True))):
+        if not is_trip_config(c):
+            continue
+        out, back = trip_dates(c)
+        if (out, back, c.origin, c.destination) not in wanted:
+            c.enabled = False
+            switched_off.add((out, back))
+    session.commit()
+    return added, len(switched_off)
 
 
 def disable_rolling_routes(session: Session) -> int:

@@ -26,6 +26,7 @@ from app.notifications.telegram import TELEGRAM_MAX_LEN, Notifier, SendResult, m
 from app.services import settings_service
 from app.services.fare_compare import compare_offer
 from app.services.fare_compare import history_text as fare_history_text
+from app.services import trips as ts
 from app.services.trips import Trip, cheapest_offers, list_trips
 
 log = logging.getLogger(__name__)
@@ -151,43 +152,102 @@ def leg_lines(session: Session, o: FlightOffer, airports: dict[str, Airport]) ->
 
 
 # ---------------------------------------------------------------------- 12-hour digest
+def _short_dates(t: Trip) -> str:
+    if t.outbound.month == t.back.month:
+        return f"{t.outbound.day}–{t.back.day} {t.back:%b}"
+    return f"{t.outbound.day} {t.outbound:%b}–{t.back.day} {t.back:%b}"
+
+
+def _traveler_title(name: str, origins: list[str], airports: dict[str, Airport]) -> str:
+    who = "You" if name == ts.DEFAULT_TRAVELER else name
+    return f"👤 <b>{_e(who)}</b> · from {_e(', '.join(_city(airports, o) for o in origins))}"
+
+
+def _amount(v: float, currency: str) -> str:
+    return money(v, currency).replace(".00", "")
+
+
+def trip_message(session: Session, config: AppConfig, t: Trip, airports: dict[str, Airport],
+                 now: datetime) -> str:
+    """One Telegram message for one trip. The first line is written to be readable
+    on its own, because it is what the phone notification shows."""
+    offers = cheapest_offers(session, t)
+    current = _current(offers, config, now)
+    groups = ts.traveler_groups(session, t)
+    best_by_group: list[tuple[str, FlightOffer | None]] = []
+    sections: list[str] = []
+    for name, origins in groups:
+        mine = [o for o in current if o.origin in origins]
+        best = mine[0] if mine else None
+        best_by_group.append((name, best))
+        lines = [_traveler_title(name, origins, airports)] if len(groups) > 1 else []
+        if best is None:
+            lines.append("No fare found for these exact dates yet.")
+        else:
+            lines.append(f"🥇 <b>{money(best.price, best.currency)}</b> {_e(_city(airports, best.origin))} ⇄ "
+                         f"{_e(_city(airports, best.destination))} · {_e(airline_name(best.airline))} · "
+                         f"{_change(best.price, _previous_price(best), best.currency)}")
+            details = [line.strip() for line in leg_lines(session, best, airports)]
+            cut = next((i for i, line in enumerate(details) if line.startswith("📊")), len(details))
+            lines += details[:cut]  # going + coming back + booking link
+            others = mine[1:3]
+            if others:
+                lines.append("Also: " + ", ".join(
+                    f"{_e(_city(airports, o.origin))} ⇄ {_e(_city(airports, o.destination))} "
+                    f"{money(o.price, o.currency)}" for o in others))
+            if details[cut:]:
+                lines += [""] + details[cut:]  # how it compares, after a blank line
+        missing = [f"{_city(airports, a)}→{_city(airports, d)}" for a in origins for d in t.destinations
+                   if not any(o.origin == a and o.destination == d for o in current)]
+        if missing and best is not None:
+            lines.append(f"<i>No fare: {_e(', '.join(missing))}</i>")
+        sections.append("\n".join(lines))
+
+    # first line = notification preview
+    found = [(n, o) for n, o in best_by_group if o is not None]
+    if not found:
+        preview = f"✈️ {_short_dates(t)} · no fares yet"
+    elif len(best_by_group) == 1:
+        o = found[0][1]
+        preview = (f"✈️ {_short_dates(t)} · {_amount(o.price, o.currency)} "
+                   f"{_city(airports, o.origin)} ⇄ {_city(airports, o.destination)}")
+    else:
+        parts = [f"{'You' if n == ts.DEFAULT_TRAVELER else n} "
+                 f"{_amount(o.price, o.currency) if o else '—'}" for n, o in best_by_group]
+        preview = f"✈️ {_short_dates(t)} · " + " · ".join(parts)
+        if len(found) == len(best_by_group) and len({o.currency for _, o in found}) == 1:
+            preview += f" · together {_amount(sum(o.price for _, o in found), found[0][1].currency)}"
+
+    head = [f"<b>{_e(preview)}</b>", f"{_trip_title(t)}"]
+    body = "\n\n".join(sections)
+    tail = []
+    if len(found) == len(best_by_group) > 1 and len({o.currency for _, o in found}) == 1:
+        cur = found[0][1].currency
+        tail.append(f"👫 <b>Together: {money(sum(o.price for _, o in found), cur)}</b> ("
+                    + " + ".join(f"{'you' if n == ts.DEFAULT_TRAVELER else _e(n)} {money(o.price, cur)}"
+                                 for n, o in found) + ")")
+    hist = _observations(session, offers)
+    if hist and len(best_by_group) == 1:
+        low = min(hist, key=lambda h: h.observed_price)
+        tail.append(f"Lowest seen so far: {money(low.observed_price, low.currency)} ({low.observed_at:%d %b})")
+    return "\n".join(head) + "\n\n" + body + ("\n\n" + "\n".join(tail) if tail else "")
+
+
 def digest_blocks(session: Session, config: AppConfig, *, now: datetime | None = None) -> list[str]:
-    """Message parts: a header, one block per watched trip, a footer."""
+    """One message per watched trip (easy to read as separate notifications). The
+    short notes at the end are added to the last message instead of a message of their own."""
     now = now or utcnow()
     airports = {a.iata: a for a in session.scalars(select(Airport))}
     trips = _upcoming(session, now.date())
     hours = search_every_hours(session, config)
-    header = (f"✈️ <b>Flight Radar update</b> · {now:%a %d %b %H:%M} UTC\n"
-              "<i>Latest prices for your trips — an update, not a deal alert.</i>")
-    blocks = [header]
     if not trips:
-        blocks.append("No upcoming trips are being watched. Add dates on the dashboard's Trips page.")
-    for t in trips:
-        offers = cheapest_offers(session, t)
-        current = _current(offers, config, now)
-        lines = [_trip_title(t)]
-        if not current:
-            lines.append("No fare found in the latest search for these exact dates.")
-        for i, o in enumerate(current[:4]):
-            medal = "🥇 " if i == 0 else "   "
-            line = (f"{medal}<b>{money(o.price, o.currency)}</b> {_e(_route(airports, o))} "
-                    f"({_e(airline_name(o.airline))}) · {_change(o.price, _previous_price(o), o.currency)}")
-            if i == 0:
-                line += "\n" + "\n".join(leg_lines(session, o, airports))
-            lines.append(line)
-        missing = [f"{_city(airports, a)}→{_city(airports, b)}" for a in t.origins for b in t.destinations
-                   if not any(o.origin == a and o.destination == b for o in current)]
-        if current and missing:
-            lines.append(f"<i>No fare: {_e(', '.join(missing))}</i>")
-        hist = _observations(session, offers)
-        if hist:
-            low = min(hist, key=lambda h: h.observed_price)
-            lines.append(f"Lowest seen so far: {money(low.observed_price, low.currency)} ({low.observed_at:%d %b})")
-        blocks.append("\n".join(lines))
-    footer = _provider_warnings(session)
-    footer.append(f"<i>Total price for the searched passengers, basic fare (small bag only). Indicative — confirm on the airline's site. "
-                  f"Next update in about {hours:g} h.</i>")
-    blocks.append("\n".join(footer))
+        return ["✈️ <b>Flight Radar</b>: no upcoming trips are being watched. "
+                "Add dates in config.yaml (cloud) or on the dashboard's Trips page."]
+    blocks = [trip_message(session, config, t, airports, now) for t in trips]
+    notes = _provider_warnings(session)
+    notes.append(f"<i>Prices per trip for the searched passengers, basic fare (small bag only). "
+                 f"Confirm on the airline's site. Next update in about {hours:g} h.</i>")
+    blocks[-1] += "\n\n" + "\n".join(notes)
     return blocks
 
 
@@ -251,9 +311,9 @@ def weekly_blocks(session: Session, config: AppConfig, *, now: datetime | None =
         pick = (f"🏆 <b>Best pick right now</b>\n{_trip_title(best.trip)}\n"
                 f"<b>{money(o.price, o.currency)}</b> {_e(_route(airports, o))} ({_e(airline_name(o.airline))}): "
                 f"{verdict}.\n" + "\n".join(leg_lines(session, o, airports)))
-        blocks.insert(1, pick)
+        blocks[0] += "\n\n" + pick
     elif trips:
-        blocks.insert(1, "🏆 No current fare for any watched trip, so there is no pick this week.")
+        blocks[0] += "\n\n🏆 No current fare for any watched trip, so there is no pick this week."
 
     runs = session.scalars(select(SearchRun.started_at).where(SearchRun.started_at >= since,
                                                               SearchRun.status == "success")).all()
@@ -267,18 +327,22 @@ def weekly_blocks(session: Session, config: AppConfig, *, now: datetime | None =
     if len(slots) < expected * 0.75:
         health += " — the computer was probably off or asleep for part of the week"
     footer = [health] + _provider_warnings(session)
-    footer.append("<i>Total price for the searched passengers, basic fare. Indicative — confirm on the airline's site.</i>")
-    blocks.append("\n".join(footer))
+    footer.append("<i>Prices per trip for the searched passengers, basic fare. Confirm on the airline's site.</i>")
+    blocks[-1] += "\n\n" + "\n".join(footer)
     return blocks
 
 
 # ---------------------------------------------------------------------- sending
-def send_blocks(notifier: Notifier, blocks: list[str]) -> SendResult:
-    """Joins blocks into as few Telegram messages as fit (4096 characters each)."""
+def send_blocks(notifier: Notifier, blocks: list[str], *, separate: bool = True) -> SendResult:
+    """Sends each block as its own Telegram message (one notification per trip), or with
+    separate=False packs them into as few messages as fit. Over-long blocks are cut at
+    Telegram's 4096-character limit."""
     messages, current = [], ""
     for b in blocks:
         b = b[:TELEGRAM_MAX_LEN]
-        if current and len(current) + 2 + len(b) > TELEGRAM_MAX_LEN:
+        if separate:
+            messages.append(b)
+        elif current and len(current) + 2 + len(b) > TELEGRAM_MAX_LEN:
             messages.append(current)
             current = b
         else:

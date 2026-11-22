@@ -56,6 +56,9 @@ class TripConfig(BaseModel):
     origins: list[str] | None = None  # None = routes.origins
     destinations: list[str] | None = None  # None = routes.destinations
     max_price: float | None = None
+    # Who flies from these origins, e.g. "Mia". Trips on the same dates with different
+    # travellers are shown side by side with a combined total. None = "You".
+    traveler: str | None = None
 
     @model_validator(mode="after")
     def _order(self) -> "TripConfig":
