@@ -62,17 +62,21 @@ def run_weekend_finder(service: SearchService, *, force: bool = False):
     with service.session_factory() as session:
         if provider is not None and not settings_service.provider_enabled(session, service.config, "ryanair"):
             provider = None
-        hours = digest.search_every_hours(session, service.config)
-        if not force and not weekend_finder.is_due(session, hours, utcnow()):
+        # A long window (e.g. a whole year) has its own, slower interval; `force` from the
+        # cloud job only overrides the normal interval, not that one.
+        hours = cfg.every_hours or digest.search_every_hours(session, service.config)
+        if (cfg.every_hours or not force) and not weekend_finder.is_due(session, hours, utcnow()):
             return None
         result = weekend_finder.run_finder(session, service.config, provider)
         if result.skipped_reason:
             log.info("Weekend finder skipped: %s", result.skipped_reason)
-        elif cfg.notify and digest.digest_enabled(session, service.config):
+            return result
+        if cfg.notify and digest.digest_enabled(session, service.config):
             messages = weekend_finder.finder_messages(session, service.config, provider)
             if messages:
                 r = digest.send_blocks(service.notifier, messages)
-                log.info("Telegram weekend finder: %s %s", r.status, r.error or "")
+                log.info("Telegram weekend finder: %s %s (%d messages)", r.status, r.error or "", len(messages))
+        weekend_finder.finish_run(session, service.config)
         return result
 
 

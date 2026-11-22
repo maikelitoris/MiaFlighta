@@ -192,23 +192,26 @@ How alerts avoid repeats:
 
 ### Weekend finder: where can we meet?
 
-`weekend_finder` in [`config.yaml`](config.yaml) checks every **Friday → Monday** weekend in a window, by default the 12 weekends from 5 Feb 2027. For each weekend it finds:
+`weekend_finder` in [`config.yaml`](config.yaml) checks every **Friday → Monday** weekend for a whole year, from 5 Feb 2027 (52 weekends). For each weekend it finds:
 
-* every European city that Ryanair flies to from **your airports (Porto/Lisbon) and Mia's (Kraków)**, ranked by your **combined** price;
+* every place that Ryanair flies to from **your airports (Porto/Lisbon) and Mia's (Kraków)**, ranked by your **combined** price;
 * what it costs for **you to visit Mia**, and for **Mia to visit you**.
 
-It uses Ryanair's "cheapest return to everywhere" search, so one request per airport per weekend covers every destination: 12 weekends × 3 airports = 36 requests a run.
+How it works:
 
-After each run you get two Telegram messages:
+* **Same city, different airports counts as meeting there.** You flying to London Stansted and Mia to London Luton is a London weekend. The same goes for Milan, Paris, Brussels, Rome, Oslo, Stockholm and Venice.
+* **`countries:` limits meeting places to the countries you list**, for example the ones Mia hasn't visited yet. The message also lists the countries in that list that only one of you can reach direct (for example *"Croatia · Mia: Dubrovnik"*), and the ones Ryanair doesn't fly to from your airports at all.
+* **One request per airport per weekend covers every destination.** A year is 52 × 3 = 156 requests, so `every_hours: 20` runs it **once a day** rather than every 12 h. Ryanair usually sells about 9–10 months ahead; later weekends just come back empty until they go on sale.
+* **Only the latest results are stored, plus the lowest combined price ever seen** for each weekend and place, so the saved data stays small. That record is what marks new lows with 🔻.
 
-1. **Best picks**: the top 8 weekend + destination combinations, with each person's price, flight times and booking links. The first line is the summary, e.g. *"🌍 Best weekend: 26 Feb–1 Mar Milan Malpensa · €103.55 together"*. A price lower than in earlier runs is marked 🔻.
-2. **Weekend by weekend**: the three cheapest shared cities for each weekend, plus the visiting prices.
+You get Telegram messages once a day:
 
-The dashboard's **Weekend Finder** page has every option in one table, with filters by weekend, maximum price and destination, and a chart of the cheapest weekend.
+1. **Best picks**: the top 8 weekend + place combinations, with each person's price, airports, flight times and booking links. The first line is the summary, e.g. *"🌍 Best weekend: 5–8 Mar London · €110 together"*.
+2. **Weekend by weekend**: the two cheapest places for each weekend, split into several messages if the year doesn't fit in one. It ends with the notes on countries only one of you can reach.
 
-Settings: change `start`, `weeks`, `outbound_weekday`/`nights` (e.g. Thursday → Sunday), the travellers and their airports, or `exclude_destinations` to skip airports you don't want.
+The dashboard's **Weekend Finder** page has every option, with filters and a chart.
 
-Only Ryanair is covered. Cities served only by other airlines (Amsterdam Schiphol, for example) never appear.
+**Coverage:** only direct Ryanair flights. Places that need another airline (Wizz Air, Pegasus, TAP…) or a connection never appear. That's why Armenia, Georgia, Turkey and Tunisia show up as "no Ryanair flights" from your airports.
 
 ### Is it a good price?
 
