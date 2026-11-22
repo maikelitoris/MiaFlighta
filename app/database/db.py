@@ -99,7 +99,7 @@ def seed_trips(session: Session, config: AppConfig) -> int:
             continue
         added += add_trip(session, config, t.outbound, t.back,
                           t.origins or config.routes.origins, t.destinations or config.routes.destinations,
-                          max_price=t.max_price, today=today)
+                          max_price=t.max_price, today=today, traveler=t.traveler)
     return added
 
 

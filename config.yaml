@@ -20,13 +20,23 @@ airports:
   - {iata: FAO, name: "Faro Airport", city: Faro, country: Portugal, timezone: Europe/Lisbon}
   - {iata: KRK, name: "John Paul II International Airport Kraków-Balice", city: Kraków, country: Poland, timezone: Europe/Warsaw}
   - {iata: KTW, name: "Katowice Wojciech Korfanty Airport", city: Katowice, country: Poland, timezone: Europe/Warsaw}
+  - {iata: AMS, name: "Amsterdam Airport Schiphol", city: Amsterdam, country: Netherlands, timezone: Europe/Amsterdam}
+  - {iata: EIN, name: "Eindhoven Airport", city: Eindhoven, country: Netherlands, timezone: Europe/Amsterdam}
 
 # Specific trips to watch: exact outbound and return dates. Each trip is searched
 # from every origin to every destination below (or its own lists). Add more in the
 # dashboard ("Trips" page) — this list only seeds a NEW database
 # (or run `python main.py init --sync-routes` to add newly listed ones).
+# `traveler`: who flies from those origins. Trips on the same dates with different
+# travellers are shown side by side in one Telegram message, with a combined total.
 trips:
-  - {outbound: 2027-01-29, back: 2027-02-01}   # Fri 29 Jan -> Mon 1 Feb 2027
+  - {outbound: 2027-01-29, back: 2027-02-01}   # Fri 29 Jan -> Mon 1 Feb 2027 (Portugal <-> Kraków)
+
+  # Fri 12 Feb -> Mon 15 Feb 2027: meeting in Amsterdam.
+  # Ryanair does not fly to Amsterdam (AMS) from these airports; it flies to Eindhoven
+  # (EIN, ~1.5 h from Amsterdam). AMS fares only appear with a Travelpayouts token.
+  - {outbound: 2027-02-12, back: 2027-02-15, origins: [OPO, LIS], destinations: [AMS, EIN]}
+  - {outbound: 2027-02-12, back: 2027-02-15, origins: [KRK], destinations: [AMS, EIN], traveler: Mia}
 
 # Defaults for trips and rolling routes. Every origin x destination x trip type
 # becomes one rolling search configuration if seed_rolling_routes is true.
@@ -49,6 +59,9 @@ routes:
 # The ground cost of getting from the airport to Kraków is added (per direction,
 # per passenger) when scoring deals and checking budgets.
 transfer_costs:
+  EIN:
+    amount: 25
+    note: "Eindhoven Airport -> Amsterdam by bus + train (rough estimate, please verify and adjust)"
   KTW:
     amount: 15
     note: "Katowice Airport -> Kraków by bus (rough estimate, please verify and adjust)"

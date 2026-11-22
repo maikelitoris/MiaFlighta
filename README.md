@@ -124,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\install_autostart.ps1
 
 | Message | When |
 |---|---|
-| **Price update** | After every scheduled search (every 12 h): the current best price of every watched trip, **deal or not**, the change since the last check, and the lowest price seen so far |
+| **Price update** | After every scheduled search (every 12 h), **one message per trip**, so each notification can be read on its own. The first line is a summary such as *"✈️ 29 Jan–1 Feb · €116 Porto ⇄ Kraków"*. Each message shows the best price **deal or not**, the going and coming-back flights, how it compares with other dates, and the change since the last check |
 | **Weekly report** | Sunday 19:00 by default (`config.yaml → reports`): the week's lowest, current and highest price per trip, the trend, and the best pick right now. It says when there is too little history to judge |
 | **Deal alert** | When an offer scores *good* or *excellent* (see Deal scoring) |
 
@@ -162,7 +162,7 @@ The dashboard shows only data that was actually collected. It never shows sample
 
 [`config.yaml`](config.yaml) holds the defaults. They are copied into the database on first `init`; after that, change things in the dashboard or with `/budget`.
 
-* **Trips**: `trips:` lists exact date pairs to watch, e.g. `{outbound: 2027-01-29, back: 2027-02-01}`. Each is searched from every `routes.origins` airport to every `routes.destinations` airport (or the trip's own `origins`/`destinations`). Past trips are skipped. Usually you add trips on the dashboard's Trips page instead.
+* **Trips**: `trips:` lists exact date pairs to watch, e.g. `{outbound: 2027-01-29, back: 2027-02-01}`. Add `traveler: Mia` to a trip to say who flies from those origins. Trips on the same dates for different travellers appear side by side in one message, with a combined total (*"✈️ 12–15 Feb · You €120 · Mia €95 · together €215"*). Each is searched from every `routes.origins` airport to every `routes.destinations` airport (or the trip's own `origins`/`destinations`). Past trips are skipped. Usually you add trips on the dashboard's Trips page instead.
 * **Rolling routes**: `routes.seed_rolling_routes: true` also creates "the next N days" searches. It is off by default, because watching every day costs many more requests than watching a few trips.
 * **Routes**: origins × destinations × trip types, plus days ahead (1–60), stay length (3–10 days), weekdays (for example Fri/Sat out, Sun/Mon back), passengers, budget and frequency. After adding routes to the YAML, run `python main.py init --sync-routes`.
 * **Katowice**: `transfer_costs.KTW` (default €15 per direction, an estimate you should adjust). It is added to KTW offers when scoring and checking the budget, because Katowice is an *alternative*, not the same as Kraków.

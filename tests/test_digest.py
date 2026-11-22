@@ -44,27 +44,59 @@ def test_digest_lists_every_trip_even_without_a_deal(config, session):
     setup_trip(config, session)
     save_offers(session, [trip_offer(130.0)])
     save_offers(session, [trip_offer(123.28), trip_offer(126.98, origin="LIS")])
-    msg = text(digest.digest_blocks(session, config))
-    assert "not a deal alert" in msg
-    assert "€123.28" in msg and "€126.98" in msg
-    assert msg.index("€123.28") < msg.index("€126.98")  # cheapest first
+    (msg,) = digest.digest_blocks(session, config)  # one trip = one message
+    preview = msg.split("\n")[0]
+    assert "€123.28 Porto ⇄ Kraków" in preview  # readable as a phone notification
+    assert "🥇 <b>€123.28</b> Porto ⇄ Kraków" in msg
+    assert "Also: Lisbon ⇄ Kraków €126.98" in msg
     assert "🔻 €6.72 vs last check" in msg
     assert "Lowest seen so far: €123.28" in msg
     assert f"out {OUT:%a %d %b} 09:40 · back {BACK:%a %d %b} 17:55" in msg  # no calendar data: totals only
+    assert "Confirm on the airline's site" in msg  # notes folded into the last message
 
 
 def test_digest_says_when_nothing_was_found(config, session):
     setup_trip(config, session)
-    msg = text(digest.digest_blocks(session, config))
-    assert "No fare found in the latest search" in msg
-    assert "€" not in msg.split("No fare found")[0].split("\n\n", 1)[1]  # no invented price
+    (msg,) = digest.digest_blocks(session, config)
+    assert "no fares yet" in msg.split("\n")[0]
+    assert "No fare found for these exact dates yet" in msg
+    assert "€" not in msg  # no invented price
 
 
 def test_digest_with_no_trips(config, session):
     for c in session.scalars(select(SearchConfiguration)):
         session.delete(c)
     session.commit()
-    assert "No upcoming trips" in text(digest.digest_blocks(session, config))
+    assert "no upcoming trips" in text(digest.digest_blocks(session, config))
+
+
+def test_one_message_per_trip(config, session):
+    setup_trip(config, session)
+    ts.add_trip(session, config, OUT + timedelta(days=7), BACK + timedelta(days=7), ["OPO"], ["KRK"])
+    n = FakeNotifier()
+    digest.send_blocks(n, digest.digest_blocks(session, config))
+    assert len(n.messages) == 2 and all(m.startswith("<b>✈️") for m in n.messages)
+
+
+def test_two_travellers_shown_side_by_side_with_total(config, session):
+    setup_trip(config, session)
+    ts.add_trip(session, config, OUT, BACK, ["KRK"], ["OPO"], traveler="Mia")
+    save_offers(session, [trip_offer(123.28), trip_offer(98.50, origin="KRK", dest="OPO")])
+    (msg,) = digest.digest_blocks(session, config)
+    preview = msg.split("\n")[0]
+    assert "You €123.28" in preview and "Mia €98.50" in preview and "together €221.78" in preview
+    assert "👤 <b>You</b> · from Porto, Lisbon" in msg and "👤 <b>Mia</b> · from Kraków" in msg
+    assert msg.index("👤 <b>You</b>") < msg.index("👤 <b>Mia</b>")
+    assert "👫 <b>Together: €221.78</b> (you €123.28 + Mia €98.50)" in msg
+
+
+def test_traveller_without_fare_shows_dash_and_no_total(config, session):
+    setup_trip(config, session)
+    ts.add_trip(session, config, OUT, BACK, ["KRK"], ["OPO"], traveler="Mia")
+    save_offers(session, [trip_offer(123.28)])
+    (msg,) = digest.digest_blocks(session, config)
+    assert "Mia —" in msg.split("\n")[0] and "together" not in msg.split("\n")[0]
+    assert "Together" not in msg
 
 
 def test_weekly_report_picks_lowest_of_week(config, session):
@@ -114,8 +146,9 @@ def test_weekly_sent_once_per_slot_and_caught_up(config, session):
     # PC was off on Sunday 19:00; switched on Monday morning -> report is caught up once
     mon = datetime(2026, 11, 16, 8, 0)
     assert digest.maybe_send_weekly(session, config, n, now_local=mon).status == "sent"
+    sent = len(n.messages)
     assert digest.maybe_send_weekly(session, config, n, now_local=mon + timedelta(hours=1)) is None
-    assert len(n.messages) == 1 and "weekly report" in n.messages[0]
+    assert len(n.messages) == sent and "weekly report" in n.messages[0]
 
 
 def test_weekly_can_be_turned_off(config, session):
@@ -125,9 +158,12 @@ def test_weekly_can_be_turned_off(config, session):
 
 def test_send_blocks_splits_long_messages():
     n = FakeNotifier()
-    blocks = ["x" * 3000, "y" * 3000, "z" * 10]
+    blocks = ["x" * 3000, "y" * 3000, "z" * 5000]
     assert digest.send_blocks(n, blocks).status == "sent"
-    assert len(n.messages) == 2 and all(len(m) <= 4096 for m in n.messages)
+    assert len(n.messages) == 3 and all(len(m) <= 4096 for m in n.messages)  # one per block, cut to fit
+    packed = FakeNotifier()
+    digest.send_blocks(packed, ["x" * 3000, "y" * 3000, "z" * 10], separate=False)
+    assert len(packed.messages) == 2
 
 
 class OneRouteService(SearchService):

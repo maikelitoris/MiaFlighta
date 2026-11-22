@@ -180,3 +180,16 @@ def test_sync_trips_from_config_adds_and_switches_off(config, session):
     assert trips[(OUT, BACK)].enabled and not trips[(date(2027, 2, 5), date(2027, 2, 8))].enabled
     # running again changes nothing (idempotent, safe every 12 h)
     assert ts.sync_trips_from_config(session, cfg, today=TODAY) == (0, 0)
+
+
+def test_sync_keeps_travellers_and_switches_off_removed_traveller(config, session):
+    clear_routes(session)
+    you = TripConfig(outbound=OUT, back=BACK, origins=["OPO", "LIS"], destinations=["KRK"])
+    mia = TripConfig(outbound=OUT, back=BACK, origins=["KTW"], destinations=["OPO"], traveler="Mia")
+    ts.sync_trips_from_config(session, config.model_copy(update={"trips": [you, mia]}), today=TODAY)
+    (trip,) = ts.list_trips(session)
+    assert ts.traveler_groups(session, trip) == [("You", ["OPO", "LIS"]), ("Mia", ["KTW"])]
+    # Mia's entry removed from config.yaml: only her airport pair is switched off
+    ts.sync_trips_from_config(session, config.model_copy(update={"trips": [you]}), today=TODAY)
+    enabled = {(c.origin, c.destination) for c in session.scalars(select(SearchConfiguration)) if c.enabled}
+    assert enabled == {("OPO", "KRK"), ("LIS", "KRK")}

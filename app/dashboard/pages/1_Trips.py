@@ -116,6 +116,9 @@ with st.container(border=True):
     max_price = a3.number_input(f"Max price ({cfg.currency})", min_value=0.0, value=0.0, step=10.0,
                                 help="Per person, whole return trip. 0 = global budget (Settings).")
 
+    traveler = st.text_input("Who's flying (optional)", placeholder="You",
+                             help="E.g. Mia. Trips on the same dates for different people are shown side by side "
+                                  "with a combined total.")
     out, back = st.session_state.trip_out, st.session_state.trip_back
     pairs = trip_service.repeat_weekly(out, back, int(weeks))
     existing = {(t.outbound, t.back) for t in trips}
@@ -155,7 +158,8 @@ with st.container(border=True):
         with ctx.session_factory() as s:
             for po, pb in pairs:
                 added += trip_service.add_trip(s, cfg, po, pb, origins, dests,
-                                               max_price=max_price or None, today=today)
+                                               max_price=max_price or None, today=today,
+                                               traveler=traveler or None)
         st.session_state.trip_flash = (f"Added {len(pairs)} trip(s) ({added} new route searches). They run at the "
                                        "next scheduler tick, or press 'Search now'.")
         st.rerun()
@@ -182,59 +186,71 @@ if b1.button("🔎 Search now", disabled=not enabled_ids, help="Searches all ena
 for t in upcoming:
     with ctx.session_factory() as s:
         offers = trip_service.cheapest_offers(s, t)
-    best = offers[0] if offers else None
     with st.container(border=True):
         left, mid, right = st.columns([2, 4, 1])
         left.markdown(f"**{t.label}**  \n"
                       f"{', '.join(map(fmt_airport, t.origins))} → {', '.join(map(fmt_airport, t.destinations))}"
                       + (f"  \nMax {t.max_price:g} {cfg.currency} pp" if t.max_price else ""))
-        if best:
-            with ctx.session_factory() as s:
-                cmp = fare_compare.compare_offer(s, best)
-            mid.markdown(f"**{best.price:.2f} {best.currency}** return · {fmt_airport(best.origin)} ⇄ "
-                         f"{fmt_airport(best.destination)} ({airline_name(best.airline)})  \n"
-                         f"<small>seen {best.collected_at:%d %b %H:%M} UTC</small>", unsafe_allow_html=True)
-            if cmp and cmp.going and cmp.coming_back:
-                mid.markdown("  \n".join(leg_md(icon, leg) for icon, leg in
-                                          (("🛫 Going", cmp.going), ("🛬 Back", cmp.coming_back))))
-            else:
-                mid.markdown(f"🛫 {fmt_day(best.departure_at.date())} {best.departure_at:%H:%M}  \n"
-                             f"🛬 {fmt_day(best.return_departure_at.date())} {best.return_departure_at:%H:%M}")
-            if best.booking_url:
-                mid.markdown(f"[Open booking page (both flights)]({best.booking_url})")
-            if cmp:
-                if cmp.rank_text:
-                    msg = f"**{cmp.verdict.capitalize()}**: {cmp.rank_text}."
-                    if cmp.cheapest:
-                        msg += " Cheaper: " + ", ".join(
-                            f"{fmt_day(c.outbound)} → {fmt_day(c.back)} {c.price:.2f}" for c in cmp.cheapest)
-                    (mid.success if cmp.verdict.startswith("good") else
-                     mid.warning if cmp.verdict.startswith("expensive") else mid.info)(msg)
-                mid.caption(fare_compare.history_text(cmp))
-            with mid.expander("Price calendar and other options"):
+        with ctx.session_factory() as s:
+            groups = trip_service.traveler_groups(s, t)
+        group_best = []
+        for gname, gorigins in groups:
+            goffers = [o for o in offers if o.origin in gorigins]
+            best = goffers[0] if goffers else None
+            group_best.append((gname, best))
+            if len(groups) > 1:
+                mid.markdown(f"#### 👤 {gname} · from {', '.join(map(fmt_airport, gorigins))}")
+            if best:
                 with ctx.session_factory() as s:
-                    out_cal = fare_compare.calendar(s, best.origin, best.destination)
-                    back_cal = fare_compare.calendar(s, best.destination, best.origin)
-                for title, cal, chosen in (("Going", out_cal, t.outbound), ("Coming back", back_cal, t.back)):
-                    days = [d for d in sorted(cal) if abs((d - chosen).days) <= 21]
-                    if days:
-                        st.caption(f"{title}: {fmt_airport(cal[days[0]].origin)} → "
-                                   f"{fmt_airport(cal[days[0]].destination)}, cheapest fare per day")
-                        st.bar_chart(pd.DataFrame({
-                            "day": [d.strftime("%a %d %b") for d in days],
-                            "price": [cal[d].price for d in days],
-                            "date": ["your date" if d == chosen else "other days" for d in days],
-                        }), x="day", y="price", color="date", height=180, sort=False)
-                if len(offers) > 1:
-                    st.markdown("**All routes for these dates**")
-                    for o in offers:
-                        st.markdown(f"- {o.origin} ⇄ {o.destination}: **{o.price:.2f} {o.currency}** "
-                                    f"({o.provider}, seen {o.collected_at:%d %b %H:%M} UTC)")
-        else:
-            mid.markdown("No price yet" + (f" · last searched {t.last_run_at:%d %b %H:%M} UTC"
-                                           if t.last_run_at else " · not searched yet"))
-            if t.last_run_at:
-                mid.caption("No enabled provider has a fare for these exact dates and airports right now.")
+                    cmp = fare_compare.compare_offer(s, best)
+                mid.markdown(f"**{best.price:.2f} {best.currency}** return · {fmt_airport(best.origin)} ⇄ "
+                             f"{fmt_airport(best.destination)} ({airline_name(best.airline)})  \n"
+                             f"<small>seen {best.collected_at:%d %b %H:%M} UTC</small>", unsafe_allow_html=True)
+                if cmp and cmp.going and cmp.coming_back:
+                    mid.markdown("  \n".join(leg_md(icon, leg) for icon, leg in
+                                              (("🛫 Going", cmp.going), ("🛬 Back", cmp.coming_back))))
+                else:
+                    mid.markdown(f"🛫 {fmt_day(best.departure_at.date())} {best.departure_at:%H:%M}  \n"
+                                 f"🛬 {fmt_day(best.return_departure_at.date())} {best.return_departure_at:%H:%M}")
+                if best.booking_url:
+                    mid.markdown(f"[Open booking page (both flights)]({best.booking_url})")
+                if cmp:
+                    if cmp.rank_text:
+                        msg = f"**{cmp.verdict.capitalize()}**: {cmp.rank_text}."
+                        if cmp.cheapest:
+                            msg += " Cheaper: " + ", ".join(
+                                f"{fmt_day(c.outbound)} → {fmt_day(c.back)} {c.price:.2f}" for c in cmp.cheapest)
+                        (mid.success if cmp.verdict.startswith("good") else
+                         mid.warning if cmp.verdict.startswith("expensive") else mid.info)(msg)
+                    mid.caption(fare_compare.history_text(cmp))
+                with mid.expander("Price calendar and other options"):
+                    with ctx.session_factory() as s:
+                        out_cal = fare_compare.calendar(s, best.origin, best.destination)
+                        back_cal = fare_compare.calendar(s, best.destination, best.origin)
+                    for title, cal, chosen in (("Going", out_cal, t.outbound), ("Coming back", back_cal, t.back)):
+                        days = [d for d in sorted(cal) if abs((d - chosen).days) <= 21]
+                        if days:
+                            st.caption(f"{title}: {fmt_airport(cal[days[0]].origin)} → "
+                                       f"{fmt_airport(cal[days[0]].destination)}, cheapest fare per day")
+                            st.bar_chart(pd.DataFrame({
+                                "day": [d.strftime("%a %d %b") for d in days],
+                                "price": [cal[d].price for d in days],
+                                "date": ["your date" if d == chosen else "other days" for d in days],
+                            }), x="day", y="price", color="date", height=180, sort=False)
+                    if len(offers) > 1:
+                        st.markdown("**All routes for these dates**")
+                        for o in offers:
+                            st.markdown(f"- {o.origin} ⇄ {o.destination}: **{o.price:.2f} {o.currency}** "
+                                        f"({o.provider}, seen {o.collected_at:%d %b %H:%M} UTC)")
+            else:
+                mid.markdown("No price yet" + (f" · last searched {t.last_run_at:%d %b %H:%M} UTC"
+                                               if t.last_run_at else " · not searched yet"))
+                if t.last_run_at:
+                    mid.caption("No enabled provider has a fare for these exact dates and airports right now.")
+        if len(groups) > 1 and all(b for _, b in group_best) and len({b.currency for _, b in group_best}) == 1:
+            total = sum(b.price for _, b in group_best)
+            left.success(f"👫 Together: **{total:.2f} {group_best[0][1].currency}**  \n" + " + ".join(
+                f"{n} {b.price:.2f}" for n, b in group_best))
         on = right.toggle("Watch", value=t.enabled, key=f"on_{t.key}")
         if on != t.enabled:
             with ctx.session_factory() as s:
