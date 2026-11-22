@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 JOB_ID = "flight_radar_tick"
 
 
-def scheduled_tick(service: SearchService, *, force: bool = False):
+def scheduled_tick(service: SearchService, *, force: bool = False, force_finder: bool = False):
     """One scheduler cycle: search due routes, then the Telegram update and the weekly
     report. force=True searches every enabled route (used by the cloud job, whose
     cron schedule already decides when a run is due). Returns the run summary."""
@@ -41,7 +41,7 @@ def scheduled_tick(service: SearchService, *, force: bool = False):
     except Exception:
         log.exception("Sending the price digest failed")
     try:
-        run_weekend_finder(service, force=force)
+        run_weekend_finder(service, force=force, ignore_interval=force_finder)
     except Exception:
         log.exception("Weekend finder failed")
     try:
@@ -52,7 +52,7 @@ def scheduled_tick(service: SearchService, *, force: bool = False):
     return summary
 
 
-def run_weekend_finder(service: SearchService, *, force: bool = False):
+def run_weekend_finder(service: SearchService, *, force: bool = False, ignore_interval: bool = False):
     """Searches all weekends in the finder window (when enabled and due) and sends
     the two finder messages. Returns the FinderRun, or None when not run."""
     cfg = service.config.weekend_finder
@@ -65,7 +65,8 @@ def run_weekend_finder(service: SearchService, *, force: bool = False):
         # A long window (e.g. a whole year) has its own, slower interval; `force` from the
         # cloud job only overrides the normal interval, not that one.
         hours = cfg.every_hours or digest.search_every_hours(session, service.config)
-        if (cfg.every_hours or not force) and not weekend_finder.is_due(session, hours, utcnow()):
+        if not ignore_interval and (cfg.every_hours or not force) and \
+                not weekend_finder.is_due(session, hours, utcnow()):
             return None
         result = weekend_finder.run_finder(session, service.config, provider)
         if result.skipped_reason:

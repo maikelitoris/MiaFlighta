@@ -315,7 +315,8 @@ def _chunks(header: str, lines: list[str], footer: str) -> list[str]:
 
 
 def finder_messages(session: Session, config: AppConfig, provider=None) -> list[str]:
-    """Best picks first, then a weekend-by-weekend overview (split if long)."""
+    """Best picks, then the best weekend of each month, then a weekend-by-weekend
+    overview (split into several messages if long)."""
     cfg = config.weekend_finder
     rows = latest_snapshot(session)
     if not rows:
@@ -360,6 +361,24 @@ def finder_messages(session: Session, config: AppConfig, provider=None) -> list[
                          f"{_amount(v.fare.price, v.fare.currency)} · {_weekend(v.out_day, v.back_day)}")
     msg1 = "\n".join(lines).strip()[:TELEGRAM_MAX_LEN]
 
+    # ---- message 2: the best weekend of every month in the window
+    months: dict[tuple[int, int], list[Meetup]] = {}
+    for m in meetups:
+        months.setdefault((m.out_day.year, m.out_day.month), []).append(m)
+    lines = [f"<b>🗓️ Best weekend each month · {window[0][0]:%b %Y} → {window[-1][0]:%b %Y}</b>", ""]
+    for y, mo in sorted({(d.year, d.month) for d, _ in window}):
+        best = months.get((y, mo), [])
+        label = date(y, mo, 1).strftime("%b %Y")
+        if not best:
+            lines.append(f"<b>{label}</b>: no shared destination on sale yet")
+            continue
+        b = best[0]
+        legs = " + ".join(f"{_e(_who(leg.traveler))} {_amount(leg.fare.price, leg.fare.currency)}" for leg in b.legs)
+        runner = f" · next: {_e(best[1].city)} {_amount(best[1].total, best[1].currency)}" if len(best) > 1 else ""
+        lines.append(f"<b>{label}</b>: {_e(b.city)} {_short(b.out_day, b.back_day)} · "
+                     f"<b>{_amount(b.total, b.currency)}</b>{' 🔻' if _trend(b) else ''} ({legs}){runner}")
+    msg_months = "\n".join(lines)[:TELEGRAM_MAX_LEN]
+
     # ---- message 2+: weekend by weekend (two best places per weekend)
     header = f"<b>📅 Weekend by weekend · {_short(*window[0])} → {_short(*window[-1])}</b>\n"
     rows_txt = []
@@ -385,4 +404,4 @@ def finder_messages(session: Session, config: AppConfig, provider=None) -> list[
             notes.append(f"<b>No Ryanair flights from your airports:</b> {_e(', '.join(missing))}")
     notes.append("<i>Prices per person, return, Ryanair basic fare (small bag only). Together = sum for both. "
                  "Confirm on ryanair.com.</i>")
-    return [msg1] + _chunks(header, rows_txt, "\n".join(notes))
+    return [msg1, msg_months] + _chunks(header, rows_txt, "\n".join(notes))
