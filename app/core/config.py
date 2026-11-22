@@ -78,14 +78,16 @@ class WeekendFinderConfig(BaseModel):
 
     enabled: bool = False
     start: date | None = None  # first outbound day to consider; None = from tomorrow
-    weeks: int = Field(12, ge=1, le=26)  # how many consecutive weekends
+    weeks: int = Field(12, ge=1, le=53)  # how many consecutive weekends
     outbound_weekday: int = Field(4, ge=0, le=6)  # 0=Mon ... 4=Fri
     nights: int = Field(3, ge=1, le=14)  # Fri -> Mon = 3
     travelers: list[FinderTraveler] = []
     exclude_destinations: list[str] = []
+    countries: list[str] = []  # meet only in these countries (English names); [] = anywhere
+    every_hours: float | None = None  # how often to run; None = with every search
     top: int = Field(8, ge=1, le=20)  # best combinations listed in the Telegram message
     notify: bool = True
-    max_requests_per_run: int = Field(60, ge=1, le=200)
+    max_requests_per_run: int = Field(60, ge=1, le=250)
 
 
 class TransferCost(BaseModel):

@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import AppConfig, WeekendFinderConfig
@@ -150,8 +150,45 @@ def latest_snapshot(session: Session) -> list[WeekendFare]:
     return list(session.scalars(select(WeekendFare).where(WeekendFare.observed_at == latest)))
 
 
+# Airports of the same city: meeting at "London" works with you at Stansted and Mia at
+# Luton. Only airports really used as the same city (not 100 km "Barcelona Girona").
+METRO_AREAS = {
+    "London": {"STN", "LTN", "LGW", "SEN", "LHR", "LCY"},
+    "Milan": {"BGY", "MXP", "LIN"},
+    "Paris": {"BVA", "ORY", "CDG"},
+    "Brussels": {"CRL", "BRU"},
+    "Rome": {"CIA", "FCO"},
+    "Oslo": {"OSL", "TRF", "RYG"},
+    "Stockholm": {"ARN", "NYO", "BMA"},
+    "Venice": {"VCE", "TSF"},
+    "Berlin": {"BER"},
+    "Istanbul": {"IST", "SAW"},
+}
+_METRO_OF = {code: name for name, codes in METRO_AREAS.items() for code in codes}
+COUNTRY_ALIASES = {"turkey": {"turkey", "türkiye", "turkiye"}, "türkiye": {"turkey", "türkiye", "turkiye"},
+                   "uk": {"united kingdom"}, "england": {"united kingdom"}, "scotland": {"united kingdom"},
+                   "czech republic": {"czech republic", "czechia"}, "czechia": {"czech republic", "czechia"}}
+LOWS_SETTING = "weekend_finder_lows"
+
+
+def place_key(code: str) -> str:
+    """Meeting place: the city for multi-airport cities, else the airport itself."""
+    return _METRO_OF.get(code, code)
+
+
+def _country_ok(country: str, wanted: list[str]) -> bool:
+    if not wanted:
+        return True
+    c = (country or "").strip().lower()
+    for w in wanted:
+        w = w.strip().lower()
+        if c == w or c in COUNTRY_ALIASES.get(w, set()):
+            return True
+    return False
+
+
 def _best_per_traveler(rows: list[WeekendFare], cfg: WeekendFinderConfig):
-    """{(out_day, traveler): {destination: cheapest fare from any of their airports}}"""
+    """{(out_day, traveler): {meeting place: cheapest fare from any of their airports}}"""
     best: dict[tuple[date, str], dict[str, WeekendFare]] = {}
     for t in cfg.travelers:
         mine = {o.upper() for o in t.origins}
@@ -159,8 +196,9 @@ def _best_per_traveler(rows: list[WeekendFare], cfg: WeekendFinderConfig):
             if r.origin not in mine:
                 continue
             slot = best.setdefault((r.out_day, t.name), {})
-            if r.destination not in slot or r.price < slot[r.destination].price:
-                slot[r.destination] = r
+            key = place_key(r.destination)
+            if key not in slot or r.price < slot[key].price:
+                slot[key] = r
     return best
 
 
@@ -172,54 +210,64 @@ def combine(session: Session, config: AppConfig, rows: list[WeekendFare] | None 
         return [], []
     best = _best_per_traveler(rows, cfg)
     home = {o.upper() for t in cfg.travelers for o in t.origins}
+    home_keys = {place_key(h) for h in home}
+    lows = settings_service.get_setting(session, LOWS_SETTING, {})
     days = sorted({(r.out_day, r.back_day) for r in rows})
     meetups: list[Meetup] = []
     visits: list[Visit] = []
     for out_day, back_day in days:
         per = [(t.name, best.get((out_day, t.name), {})) for t in cfg.travelers]
-        common = set.intersection(*(set(d) for _, d in per)) - home if per else set()
-        for dest in common:
-            legs = [Leg(name, d[dest]) for name, d in per]
-            if len({leg.fare.currency for leg in legs}) != 1:
-                continue
+        common = set.intersection(*(set(d) for _, d in per)) - home_keys if per else set()
+        for key in common:
+            legs = [Leg(name, d[key]) for name, d in per]
             f0 = legs[0].fare
-            meetups.append(Meetup(out_day, back_day, dest, f0.city, f0.country, legs,
-                                  round(sum(leg.fare.price for leg in legs), 2), f0.currency))
+            if len({leg.fare.currency for leg in legs}) != 1 or not _country_ok(f0.country, cfg.countries):
+                continue
+            airports = {leg.fare.destination for leg in legs}
+            city = key if key in METRO_AREAS else f0.city
+            total = round(sum(leg.fare.price for leg in legs), 2)
+            meetups.append(Meetup(out_day, back_day, key, city, f0.country, legs, total, f0.currency,
+                                  previous_low=lows.get(f"{out_day.isoformat()}|{key}")))
+            if len(airports) > 1:
+                meetups[-1].city = f"{city} ({' + '.join(sorted(airports))})"
         if len(cfg.travelers) == 2:  # one visits the other
             for a, b in (cfg.travelers, cfg.travelers[::-1]):
-                to_b = [f for dest, f in best.get((out_day, a.name), {}).items()
-                        if dest in {o.upper() for o in b.origins}]
+                to_b = [f for f in (r for r in rows if r.out_day == out_day and r.origin in {o.upper() for o in a.origins})
+                        if f.destination in {o.upper() for o in b.origins}]
                 if to_b:
                     visits.append(Visit(out_day, back_day, a.name, b.name, min(to_b, key=lambda f: f.price)))
     meetups.sort(key=lambda m: (m.total, m.out_day))
-    _attach_previous_lows(session, meetups, rows, cfg)
     return meetups, visits
 
 
-def _attach_previous_lows(session: Session, meetups: list[Meetup], rows: list[WeekendFare],
-                          cfg: WeekendFinderConfig) -> None:
-    """Lowest combined price for the same weekend and destination in earlier runs."""
-    if not rows or not meetups:
-        return
-    latest = rows[0].observed_at
-    older = list(session.scalars(select(WeekendFare).where(WeekendFare.observed_at < latest)))
-    if not older:
-        return
-    by_run: dict[datetime, list[WeekendFare]] = {}
-    for r in older:
-        by_run.setdefault(r.observed_at, []).append(r)
-    lows: dict[tuple[date, str], float] = {}
-    for run_rows in by_run.values():
-        best = _best_per_traveler(run_rows, cfg)
-        days = {r.out_day for r in run_rows}
-        for out_day in days:
-            per = [best.get((out_day, t.name), {}) for t in cfg.travelers]
-            for dest in set.intersection(*(set(d) for d in per)):
-                total = sum(d[dest].price for d in per)
-                key = (out_day, dest)
-                lows[key] = min(lows.get(key, total), total)
+def one_sided(session: Session, config: AppConfig, rows: list[WeekendFare] | None = None) -> dict[str, dict[str, set]]:
+    """Wanted countries only some travellers can reach: {country: {traveller: {cities}}}."""
+    cfg = config.weekend_finder
+    rows = latest_snapshot(session) if rows is None else rows
+    reach: dict[str, dict[str, set]] = {}
+    for t in cfg.travelers:
+        mine = {o.upper() for o in t.origins}
+        for r in rows:
+            if r.origin in mine and _country_ok(r.country, cfg.countries):
+                reach.setdefault(r.country, {}).setdefault(t.name, set()).add(r.city)
+    return {c: who for c, who in reach.items() if len(who) < len(cfg.travelers)}
+
+
+def finish_run(session: Session, config: AppConfig) -> None:
+    """After a run's messages are built: remember each weekend + place's lowest combined
+    price, and delete older snapshots so the database stays small."""
+    meetups, _ = combine(session, config)
+    lows = dict(settings_service.get_setting(session, LOWS_SETTING, {}))
     for m in meetups:
-        m.previous_low = lows.get((m.out_day, m.destination))
+        k = f"{m.out_day.isoformat()}|{m.destination}"
+        lows[k] = min(lows.get(k, m.total), m.total)
+    today = date.today().isoformat()
+    lows = {k: v for k, v in lows.items() if k.split("|")[0] >= today}  # forget past weekends
+    settings_service.set_setting(session, LOWS_SETTING, lows)
+    latest = session.scalar(select(func.max(WeekendFare.observed_at)))
+    if latest is not None:
+        session.execute(delete(WeekendFare).where(WeekendFare.observed_at < latest))
+        session.commit()
 
 
 # ---------------------------------------------------------------------- messages
@@ -249,70 +297,92 @@ def _amount(v: float, cur: str) -> str:
 
 
 def _trend(m: Meetup) -> str:
-    if m.previous_low is None:
-        return ""
-    if m.total < m.previous_low - 0.01:
+    if m.previous_low is not None and m.total < m.previous_low - 0.01:
         return f" · 🔻 new low (was {_amount(m.previous_low, m.currency)})"
     return ""
 
 
+def _chunks(header: str, lines: list[str], footer: str) -> list[str]:
+    """Splits a long list into Telegram-sized messages, header on the first."""
+    out, cur = [], header
+    for line in lines:
+        if len(cur) + len(line) + 1 > TELEGRAM_MAX_LEN - len(footer) - 2:
+            out.append(cur)
+            cur = header.split("\n")[0] + " (cont.)"
+        cur += "\n" + line
+    out.append(cur + "\n\n" + footer)
+    return out
+
+
 def finder_messages(session: Session, config: AppConfig, provider=None) -> list[str]:
-    """Two messages: the best picks overall, then a weekend-by-weekend overview."""
+    """Best picks first, then a weekend-by-weekend overview (split if long)."""
     cfg = config.weekend_finder
-    meetups, visits = combine(session, config)
-    airports = {a.iata: a for a in session.scalars(select(Airport))}
-    city = lambda code: airports[code].city if code in airports else code  # noqa: E731
     rows = latest_snapshot(session)
     if not rows:
         return []
+    meetups, visits = combine(session, config, rows)
+    airports = {a.iata: a for a in session.scalars(select(Airport))}
+    city = lambda code: airports[code].city if code in airports else code  # noqa: E731
     window = sorted({(r.out_day, r.back_day) for r in rows})
     names = " & ".join(_who(t.name) for t in cfg.travelers)
+    where = f" · {', '.join(cfg.countries)}" if cfg.countries else ""
 
-    # ---- message 1: top picks
+    # ---- message 1: best picks
     if meetups:
         b = meetups[0]
-        preview = (f"🌍 Best weekend: {_short(b.out_day, b.back_day)} {b.city} · "
-                   f"{_amount(b.total, b.currency)} together")
+        preview = f"🌍 Best weekend: {_short(b.out_day, b.back_day)} {b.city} · {_amount(b.total, b.currency)} together"
     else:
-        preview = "🌍 Weekend finder: no shared destination found this time"
+        preview = "🌍 Weekend finder: no shared destination in your countries this time"
     lines = [f"<b>{_e(preview)}</b>",
-             f"{names} · {len(window)} weekends {_short(*window[0])} → {_short(*window[-1])} · Ryanair only", ""]
+             f"{names} · {len(window)} weekends {_short(*window[0])} → {_short(*window[-1])}{_e(where)} · "
+             "Ryanair direct only", ""]
     for i, m in enumerate(meetups[: cfg.top], 1):
         lines.append(f"<b>{i}. {_e(m.city)}</b> ({_e(m.country)}) · {_weekend(m.out_day, m.back_day)} · "
                      f"<b>{_amount(m.total, m.currency)}</b>{_trend(m)}")
         for leg in m.legs:
             f = leg.fare
-            times = f"{f.outbound_departure:%a %H:%M} → back {f.inbound_departure:%a %H:%M}"
             link = ""
             if provider is not None and i <= 3:
                 link = f' · <a href="{_e(provider.booking_url(f.origin, f.destination, m.out_day, m.back_day))}">book</a>'
-            lines.append(f"   {_e(_who(leg.traveler))} {_amount(f.price, f.currency)} from {_e(city(f.origin))} "
-                         f"({times}){link}")
+            lines.append(f"   {_e(_who(leg.traveler))} {_amount(f.price, f.currency)} {_e(city(f.origin))}→"
+                         f"{_e(f.destination)} ({f.outbound_departure:%a %H:%M} → back "
+                         f"{f.inbound_departure:%a %H:%M}){link}")
         lines.append("")
     if visits:
-        cheapest = {}
+        cheapest: dict[tuple[str, str], Visit] = {}
         for v in visits:
-            key = (v.visitor, v.host)
-            if key not in cheapest or v.fare.price < cheapest[key].fare.price:
-                cheapest[key] = v
+            k = (v.visitor, v.host)
+            if k not in cheapest or v.fare.price < cheapest[k].fare.price:
+                cheapest[k] = v
         lines.append("<b>Visiting each other</b> (cheapest weekend)")
         for v in cheapest.values():
             lines.append(f"   {_e(_who(v.visitor))} → {_e(city(v.fare.destination))}: "
                          f"{_amount(v.fare.price, v.fare.currency)} · {_weekend(v.out_day, v.back_day)}")
-    msg1 = "\n".join(lines).strip()
+    msg1 = "\n".join(lines).strip()[:TELEGRAM_MAX_LEN]
 
-    # ---- message 2: weekend by weekend
-    lines = [f"<b>📅 Weekend by weekend · {_short(*window[0])} → {_short(*window[-1])}</b>", ""]
+    # ---- message 2+: weekend by weekend (two best places per weekend)
+    header = f"<b>📅 Weekend by weekend · {_short(*window[0])} → {_short(*window[-1])}</b>\n"
+    rows_txt = []
     for out_day, back_day in window:
-        here = [m for m in meetups if m.out_day == out_day][:3]
-        vis = [v for v in visits if v.out_day == out_day]
-        parts = [f"{_e(m.city)} {_amount(m.total, m.currency)}" for m in here] or ["no shared destination"]
-        line = f"<b>{_short(out_day, back_day)}</b>: " + " · ".join(parts)
-        if vis:
-            line += "\n   " + " · ".join(f"{_e(_who(v.visitor))}→{_e(city(v.fare.destination))} "
-                                       f"{_amount(v.fare.price, v.fare.currency)}" for v in vis)
-        lines.append(line)
-    lines += ["", "<i>Prices per person, return, Ryanair basic fare (small bag only), from Ryanair's fare finder. "
-                  "Together = sum for both. Confirm on ryanair.com.</i>"]
-    msg2 = "\n".join(lines)
-    return [m[:TELEGRAM_MAX_LEN] for m in (msg1, msg2)]
+        here = [m for m in meetups if m.out_day == out_day][:2]
+        if here:
+            rows_txt.append(f"<b>{_short(out_day, back_day)}</b>: "
+                            + " · ".join(f"{_e(m.city)} {_amount(m.total, m.currency)}{' 🔻' if _trend(m) else ''}"
+                                         for m in here))
+    if not rows_txt:
+        rows_txt = ["No weekend has a shared destination in your countries yet."]
+    notes = []
+    sided = one_sided(session, config, rows)
+    if sided:
+        notes.append("<b>Only one of you flies there direct:</b>")
+        for country, who in sorted(sided.items()):
+            parts = [f"{_e(_who(n))}: {_e(', '.join(sorted(c)))}" for n, c in who.items()]
+            notes.append(f"   {_e(country)} · " + " · ".join(parts))
+    if cfg.countries:
+        reached = {r.country.lower() for r in rows}
+        missing = [c for c in cfg.countries if not any(x in reached for x in COUNTRY_ALIASES.get(c.lower(), {c.lower()}))]
+        if missing:
+            notes.append(f"<b>No Ryanair flights from your airports:</b> {_e(', '.join(missing))}")
+    notes.append("<i>Prices per person, return, Ryanair basic fare (small bag only). Together = sum for both. "
+                 "Confirm on ryanair.com.</i>")
+    return [msg1] + _chunks(header, rows_txt, "\n".join(notes))

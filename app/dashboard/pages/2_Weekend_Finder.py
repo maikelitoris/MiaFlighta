@@ -25,6 +25,7 @@ if st.button("🔎 Search all weekends now", help=f"About {len(cfg.travelers) an
     with st.spinner("Searching every weekend… this takes a couple of minutes"):
         with ctx.session_factory() as s:
             r = wf.run_finder(s, ctx.config, ctx.providers.get("ryanair"))
+            wf.finish_run(s, ctx.config)
     (st.warning if r.errors or r.skipped_reason else st.success)(
         r.skipped_reason or f"{r.weekends} weekends, {r.requests} requests, {r.fares} fares")
     st.rerun()

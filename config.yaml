@@ -38,15 +38,20 @@ trips:
 weekend_finder:
   enabled: true
   start: 2027-02-05          # first Friday after 29 Jan (you're together that weekend)
-  weeks: 12                  # 5 Feb ... 23 Apr (back Mon 26 Apr)
+  weeks: 52                  # a whole year: 5 Feb 2027 ... 28 Jan 2028 (Ryanair sells ~9-10 months ahead)
   outbound_weekday: 4        # 4 = Friday
   nights: 3                  # Friday -> Monday
   travelers:
     - {name: You, origins: [OPO, LIS]}
     - {name: Mia, origins: [KRK]}
   exclude_destinations: []   # e.g. [STN, BVA] to skip airports you don't like
+  # Meet only in countries Mia hasn't been to (English names, as Ryanair writes them).
+  # Ryanair flies to Armenia, Georgia, Turkey and Tunisia from none of your airports, so
+  # those never match; the message lists which countries only one of you can reach.
+  countries: [Croatia, Germany, Norway, Bulgaria, United Kingdom, Armenia, Georgia, Turkey, Tunisia, Morocco]
   top: 8                     # best combinations in the Telegram message
-  max_requests_per_run: 60
+  every_hours: 20            # a whole year is 156 requests: search it once a day, not every 12 h
+  max_requests_per_run: 170
 
 # Defaults for trips and rolling routes. Every origin x destination x trip type
 # becomes one rolling search configuration if seed_rolling_routes is true.
