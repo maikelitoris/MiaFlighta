@@ -96,6 +96,34 @@ class DailyFare(Base):
     )
 
 
+class WeekendFare(Base):
+    """One observation from the weekend finder: the cheapest Ryanair return trip from
+    one airport to one destination for one exact weekend. Append-only."""
+
+    __tablename__ = "weekend_fares"
+    __table_args__ = (Index("ix_weekend_obs", "observed_at"),
+                      Index("ix_weekend_trip", "out_day", "destination", "origin"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    out_day: Mapped[date] = mapped_column(Date)
+    back_day: Mapped[date] = mapped_column(Date)
+    origin: Mapped[str] = mapped_column(String(3))
+    destination: Mapped[str] = mapped_column(String(3))
+    city: Mapped[str] = mapped_column(String(80))
+    country: Mapped[str] = mapped_column(String(80), default="")
+    price: Mapped[float] = mapped_column(Float)  # one adult, both ways
+    currency: Mapped[str] = mapped_column(String(3))
+    outbound_price: Mapped[float] = mapped_column(Float)
+    inbound_price: Mapped[float] = mapped_column(Float)
+    outbound_departure: Mapped[datetime] = mapped_column(DateTime)
+    outbound_arrival: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    inbound_departure: Mapped[datetime] = mapped_column(DateTime)
+    inbound_arrival: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    outbound_flight: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    inbound_flight: Mapped[str | None] = mapped_column(String(12), nullable=True)
+
+
 class FlightOffer(Base):
     """One itinerary. The price columns hold the LATEST observation;
     every observation is kept in PriceHistory and never overwritten."""

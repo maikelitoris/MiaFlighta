@@ -11,7 +11,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.base import BaseScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from app.services import digest
+from app.core.timeutils import utcnow
+from app.services import digest, settings_service, weekend_finder
 from app.services.search_service import SearchService
 
 log = logging.getLogger(__name__)
@@ -40,11 +41,39 @@ def scheduled_tick(service: SearchService, *, force: bool = False):
     except Exception:
         log.exception("Sending the price digest failed")
     try:
+        run_weekend_finder(service, force=force)
+    except Exception:
+        log.exception("Weekend finder failed")
+    try:
         with service.session_factory() as session:
             digest.maybe_send_weekly(session, service.config, service.notifier)
     except Exception:
         log.exception("Sending the weekly report failed")
     return summary
+
+
+def run_weekend_finder(service: SearchService, *, force: bool = False):
+    """Searches all weekends in the finder window (when enabled and due) and sends
+    the two finder messages. Returns the FinderRun, or None when not run."""
+    cfg = service.config.weekend_finder
+    if not cfg.enabled:
+        return None
+    provider = service.providers.get("ryanair")
+    with service.session_factory() as session:
+        if provider is not None and not settings_service.provider_enabled(session, service.config, "ryanair"):
+            provider = None
+        hours = digest.search_every_hours(session, service.config)
+        if not force and not weekend_finder.is_due(session, hours, utcnow()):
+            return None
+        result = weekend_finder.run_finder(session, service.config, provider)
+        if result.skipped_reason:
+            log.info("Weekend finder skipped: %s", result.skipped_reason)
+        elif cfg.notify and digest.digest_enabled(session, service.config):
+            messages = weekend_finder.finder_messages(session, service.config, provider)
+            if messages:
+                r = digest.send_blocks(service.notifier, messages)
+                log.info("Telegram weekend finder: %s %s", r.status, r.error or "")
+        return result
 
 
 def build_scheduler(service: SearchService, tick_minutes: float, *, blocking: bool = False) -> BaseScheduler:

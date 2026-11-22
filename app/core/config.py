@@ -67,6 +67,27 @@ class TripConfig(BaseModel):
         return self
 
 
+class FinderTraveler(BaseModel):
+    name: str
+    origins: list[str]
+
+
+class WeekendFinderConfig(BaseModel):
+    """Searches every weekend in a window for the cheapest place where all travellers
+    can meet (plus one visiting the other), using Ryanair's "everywhere" fare search."""
+
+    enabled: bool = False
+    start: date | None = None  # first outbound day to consider; None = from tomorrow
+    weeks: int = Field(12, ge=1, le=26)  # how many consecutive weekends
+    outbound_weekday: int = Field(4, ge=0, le=6)  # 0=Mon ... 4=Fri
+    nights: int = Field(3, ge=1, le=14)  # Fri -> Mon = 3
+    travelers: list[FinderTraveler] = []
+    exclude_destinations: list[str] = []
+    top: int = Field(8, ge=1, le=20)  # best combinations listed in the Telegram message
+    notify: bool = True
+    max_requests_per_run: int = Field(60, ge=1, le=200)
+
+
 class TransferCost(BaseModel):
     amount: float = Field(ge=0)
     note: str = ""
@@ -145,6 +166,7 @@ class AppConfig(BaseModel):
     airports: list[AirportConfig] = []
     routes: RoutesConfig = RoutesConfig()
     trips: list[TripConfig] = []
+    weekend_finder: WeekendFinderConfig = WeekendFinderConfig()
     transfer_costs: dict[str, TransferCost] = {}
     providers: dict[str, ProviderConfig] = {"travelpayouts": ProviderConfig()}
     scoring: ScoringConfig = ScoringConfig()

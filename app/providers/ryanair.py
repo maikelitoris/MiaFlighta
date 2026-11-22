@@ -61,6 +61,27 @@ class Fare:
     flight_number: str | None = None
 
 
+@dataclass(frozen=True)
+class RoundTripFare:
+    """Cheapest Ryanair return trip from one airport to one destination for exact
+    outbound/inbound days (from the fare finder's "everywhere" search). One adult."""
+
+    origin: str
+    destination: str
+    destination_city: str
+    destination_country: str
+    outbound_departure: datetime  # local times
+    outbound_arrival: datetime | None
+    inbound_departure: datetime
+    inbound_arrival: datetime | None
+    outbound_price: float
+    inbound_price: float
+    price: float  # outbound + inbound
+    currency: str
+    outbound_flight: str | None = None
+    inbound_flight: str | None = None
+
+
 class RyanairProvider(FlightProvider):
     name = "ryanair"
     price_type = PriceType.INDICATIVE
@@ -195,6 +216,31 @@ class RyanairProvider(FlightProvider):
         ]
         return result
 
+    def round_trip_fares(self, origin: str, out_day: date, back_day: date,
+                         currency: str = "EUR") -> list[RoundTripFare]:
+        """Cheapest return trip to EVERY destination served from `origin`, leaving on
+        out_day and coming back on back_day: one request covers all of Europe."""
+        self._ensure_session()
+        params = {
+            "departureAirportIataCode": origin,
+            "outboundDepartureDateFrom": out_day.isoformat(), "outboundDepartureDateTo": out_day.isoformat(),
+            "inboundDepartureDateFrom": back_day.isoformat(), "inboundDepartureDateTo": back_day.isoformat(),
+            "currency": currency,
+        }
+        try:
+            payload, _ = self.http.get_json(f"{API_BASE}roundTripFares", params)
+        except ProviderRequestError as exc:
+            if exc.status_code == 404:
+                return []
+            raise
+        return parse_round_trip_fares(payload, origin)
+
+    def booking_url(self, origin: str, destination: str, out_day: date, back_day: date, adults: int = 1) -> str:
+        params = {"adults": adults, "teens": 0, "children": 0, "infants": 0, "dateOut": out_day.isoformat(),
+                  "dateIn": back_day.isoformat(), "isConnectedFlight": "false", "isReturn": "true", "discount": 0,
+                  "originIata": origin, "destinationIata": destination}
+        return f"{BOOKING_URL}?{httpx.QueryParams(params)}"
+
     def health_check(self) -> HealthResult:
         try:
             self._fares_for_month("OPO", "KRK", date.today().replace(day=1), "EUR")
@@ -291,3 +337,40 @@ def parse_one_way_fares(payload: Any, origin: str, dest: str) -> dict[date, Fare
         if dep.date() not in result or fare.price < result[dep.date()].price:
             result[dep.date()] = fare
     return result
+
+
+def parse_round_trip_fares(payload: Any, origin: str) -> list[RoundTripFare]:
+    try:
+        items = payload["fares"] or []
+    except (KeyError, TypeError) as exc:
+        raise ProviderRequestError("ryanair: unexpected roundTripFares response shape") from exc
+    out: list[RoundTripFare] = []
+    for item in items:
+        try:
+            ob, ib = item["outbound"], item["inbound"]
+            if ob["departureAirport"]["iataCode"] != origin:
+                continue
+            p_out, p_in = _price(ob.get("price")), _price(ib.get("price"))
+            total = _price((item.get("summary") or {}).get("price"))
+            if p_out is None or p_in is None:
+                continue
+            arr = ob["arrivalAirport"]
+            out.append(RoundTripFare(
+                origin=origin, destination=arr["iataCode"],
+                # airport name ("Milan Bergamo", "Paris Beauvais") is clearer than Ryanair's city field
+                destination_city=(arr.get("name") or (arr.get("city") or {}).get("name") or arr["iataCode"]),
+                destination_country=arr.get("countryName") or "",
+                outbound_departure=datetime.fromisoformat(ob["departureDate"]).replace(tzinfo=None),
+                outbound_arrival=(datetime.fromisoformat(ob["arrivalDate"]).replace(tzinfo=None)
+                                  if ob.get("arrivalDate") else None),
+                inbound_departure=datetime.fromisoformat(ib["departureDate"]).replace(tzinfo=None),
+                inbound_arrival=(datetime.fromisoformat(ib["arrivalDate"]).replace(tzinfo=None)
+                                 if ib.get("arrivalDate") else None),
+                outbound_price=p_out[0], inbound_price=p_in[0],
+                price=round(total[0] if total else p_out[0] + p_in[0], 2),
+                currency=(total[1] if total else p_out[1]) or "EUR",
+                outbound_flight=ob.get("flightNumber"), inbound_flight=ib.get("flightNumber"),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue  # skip malformed entries, keep the rest
+    return out

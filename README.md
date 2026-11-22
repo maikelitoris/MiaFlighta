@@ -190,6 +190,26 @@ How alerts avoid repeats:
 * It is alerted again only if it gets at least 5% cheaper or its category improves.
 * Failed sends are retried on the next run.
 
+### Weekend finder: where can we meet?
+
+`weekend_finder` in [`config.yaml`](config.yaml) checks every **Friday → Monday** weekend in a window, by default the 12 weekends from 5 Feb 2027. For each weekend it finds:
+
+* every European city that Ryanair flies to from **your airports (Porto/Lisbon) and Mia's (Kraków)**, ranked by your **combined** price;
+* what it costs for **you to visit Mia**, and for **Mia to visit you**.
+
+It uses Ryanair's "cheapest return to everywhere" search, so one request per airport per weekend covers every destination: 12 weekends × 3 airports = 36 requests a run.
+
+After each run you get two Telegram messages:
+
+1. **Best picks**: the top 8 weekend + destination combinations, with each person's price, flight times and booking links. The first line is the summary, e.g. *"🌍 Best weekend: 26 Feb–1 Mar Milan Malpensa · €103.55 together"*. A price lower than in earlier runs is marked 🔻.
+2. **Weekend by weekend**: the three cheapest shared cities for each weekend, plus the visiting prices.
+
+The dashboard's **Weekend Finder** page has every option in one table, with filters by weekend, maximum price and destination, and a chart of the cheapest weekend.
+
+Settings: change `start`, `weeks`, `outbound_weekday`/`nights` (e.g. Thursday → Sunday), the travellers and their airports, or `exclude_destinations` to skip airports you don't want.
+
+Only Ryanair is covered. Cities served only by other airlines (Amsterdam Schiphol, for example) never appear.
+
 ### Is it a good price?
 
 Ryanair does not publish past prices, and no free source of historical Ryanair fares exists. Google Flights and Skyscanner price graphs have no free API. The app therefore compares only with prices it has actually collected, in two ways:
